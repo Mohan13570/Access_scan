@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccessScan On-Screen Keyboard</title>
+  <link rel="stylesheet" href="keyboard.css" />
+</head>
+<body>
+  <div id="osk-root" role="application" aria-label="AccessScan On-Screen Keyboard">
+
+    <!-- Toolbar: input preview + controls -->
+    <div id="osk-toolbar" role="toolbar" aria-label="Keyboard controls">
+      <div id="osk-preview" aria-live="polite" aria-label="Text entered"></div>
+      <div id="osk-controls">
+        <button id="btn-layout-qwerty" class="layout-btn active" data-layout="qwerty" aria-pressed="true">ABC</button>
+        <button id="btn-layout-numeric" class="layout-btn" data-layout="numeric" aria-pressed="false">123</button>
+        <button id="btn-layout-email" class="layout-btn" data-layout="email" aria-pressed="false">@</button>
+        <button id="btn-pause" aria-label="Pause scanning" title="Pause">⏸</button>
+        <button id="btn-done" aria-label="Done — close keyboard" title="Done">✓ Done</button>
+        <button id="btn-close" aria-label="Close keyboard" title="Close">✕</button>
+      </div>
+    </div>
+
+    <!-- Group scanning indicator (hierarchical OSK mode) -->
+    <div id="osk-group-indicator" aria-live="polite" aria-label="Current row group"></div>
+
+    <!-- Keys container — populated by JavaScript -->
+    <div id="osk-keys" role="group" aria-label="Keyboard keys"></div>
+
+    <!-- Screen-reader live region -->
+    <div id="osk-announce" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
+  </div>
+
+  <script src="keyboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   AccessScan — Content Script Styles
+   Injected into every page alongside the content scripts.
+   Uses high z-index and !important sparingly to avoid conflicts.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* Keyframe animation for the scanning highlight pulse */
+@keyframes accessscan-pulse {
+  0%   { box-shadow: 0 0 0 2px rgba(0,0,0,0.3), 0 0 8px var(--as-color, #FF6B35); }
+  50%  { box-shadow: 0 0 0 4px rgba(0,0,0,0.2), 0 0 20px var(--as-color, #FF6B35); }
+  100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.3), 0 0 8px var(--as-color, #FF6B35); }
+}
+
+/* Screen-reader only utility (same pattern as Bootstrap / Tailwind) */
+#accessscan-root .sr-only,
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* Status badge — fixed top-right corner */
+#accessscan-status-badge {
+  position: fixed !important;
+  top: 12px !important;
+  right: 12px !important;
+  padding: 4px 12px !important;
+  background: rgba(15, 15, 15, 0.85) !important;
+  color: #fff !important;
+  font: 700 13px/20px system-ui, sans-serif !important;
+  border-radius: 20px !important;
+  z-index: 2147483647 !important;
+  pointer-events: none !important;
+  backdrop-filter: blur(6px) !important;
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  letter-spacing: 0.3px !important;
+  user-select: none !important;
+}
+
+/* OSK iframe slide-up animation */
+#accessscan-osk-iframe {
+  animation: accessscan-slide-up 0.2s ease-out !important;
+}
+
+@keyframes accessscan-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}

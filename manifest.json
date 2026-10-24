@@ -1,0 +1,59 @@
+{
+  "manifest_version": 3,
+  "name": "AccessScan — Universal Single-Switch Browser Assistant",
+  "short_name": "AccessScan",
+  "version": "1.0.0",
+  "description": "Empowers people with motor impairments to navigate any website using a single switch, with hierarchical scanning and an integrated on-screen keyboard.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "src/content/scanner.js",
+        "src/content/highlighter.js",
+        "src/content/hierarchy.js",
+        "src/content/input-handler.js",
+        "src/content/main.js"
+      ],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/icons/icon16.png",
+      "32": "src/icons/icon32.png",
+      "48": "src/icons/icon48.png",
+      "128": "src/icons/icon128.png"
+    },
+    "default_title": "AccessScan"
+  },
+  "icons": {
+    "16": "src/icons/icon16.png",
+    "32": "src/icons/icon32.png",
+    "48": "src/icons/icon48.png",
+    "128": "src/icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/keyboard/keyboard.html",
+        "src/keyboard/keyboard.css",
+        "src/keyboard/keyboard.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -1,0 +1,225 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   AccessScan — On-Screen Keyboard Styles
+   ──────────────────────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --osk-bg: #1a1a2e;
+  --osk-toolbar-bg: #16213e;
+  --osk-key-bg: #0f3460;
+  --osk-key-hover: #e94560;
+  --osk-key-active: #c73652;
+  --osk-key-highlight: #FF6B35;
+  --osk-key-special: #1b4f72;
+  --osk-text: #eaeaea;
+  --osk-muted: #8899aa;
+  --osk-preview-bg: #0a0f1e;
+  --osk-border: #2c3e6a;
+  --osk-radius: 6px;
+  --osk-group-highlight: #2563EB;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: var(--osk-bg);
+  color: var(--osk-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+  user-select: none;
+}
+
+#osk-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px 8px 4px;
+  gap: 4px;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+#osk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--osk-toolbar-bg);
+  border: 1px solid var(--osk-border);
+  border-radius: var(--osk-radius);
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+
+#osk-preview {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  background: var(--osk-preview-bg);
+  border: 1px solid var(--osk-border);
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #aef;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-height: 26px;
+}
+
+#osk-controls {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.layout-btn,
+#btn-pause,
+#btn-done,
+#btn-close {
+  border: 1px solid var(--osk-border);
+  border-radius: 4px;
+  background: var(--osk-key-special);
+  color: var(--osk-text);
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.layout-btn.active {
+  background: var(--osk-key-highlight);
+  border-color: var(--osk-key-highlight);
+  color: #fff;
+}
+
+.layout-btn:focus,
+#btn-pause:focus,
+#btn-done:focus,
+#btn-close:focus {
+  outline: 2px solid var(--osk-key-highlight);
+  outline-offset: 1px;
+}
+
+#btn-done {
+  background: #1e6b3c;
+  border-color: #27a85a;
+}
+
+#btn-close {
+  background: #6b1e1e;
+  border-color: #a82727;
+}
+
+/* ── Group indicator ────────────────────────────────────────────────────── */
+#osk-group-indicator {
+  font-size: 12px;
+  color: var(--osk-group-highlight);
+  font-weight: 600;
+  min-height: 16px;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ── Key grid ────────────────────────────────────────────────────────────── */
+#osk-keys {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.osk-row {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.osk-key {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--osk-border);
+  border-radius: var(--osk-radius);
+  background: var(--osk-key-bg);
+  color: var(--osk-text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, transform 0.05s, border-color 0.1s;
+  position: relative;
+  overflow: hidden;
+}
+
+.osk-key:hover {
+  background: #1a4a7a;
+}
+
+.osk-key:active {
+  background: var(--osk-key-active);
+  transform: scale(0.95);
+}
+
+.osk-key:focus {
+  outline: 2px solid var(--osk-key-highlight);
+  outline-offset: 1px;
+}
+
+/* Highlighted key during scanning */
+.osk-key.scanning {
+  background: var(--osk-key-highlight) !important;
+  border-color: #fff !important;
+  color: #fff !important;
+  transform: scale(1.08);
+  box-shadow: 0 0 12px var(--osk-key-highlight), 0 0 4px rgba(0,0,0,0.5);
+  z-index: 2;
+}
+
+/* Group highlighted (row highlighted during group scanning) */
+.osk-row.group-scanning .osk-key {
+  border-color: var(--osk-group-highlight);
+  box-shadow: 0 0 0 1px var(--osk-group-highlight);
+}
+
+/* Special keys (Space, Backspace, etc.) */
+.osk-key.key-space  { flex: 3; }
+.osk-key.key-back   { flex: 1.5; background: #2c2c54; }
+.osk-key.key-shift  { flex: 1.5; background: #1b4f72; }
+.osk-key.key-clear  { flex: 1.5; background: #6b1e1e; }
+.osk-key.key-done   { flex: 2;   background: #1e6b3c; }
+.osk-key.key-at     { background: #2c2c54; }
+.osk-key.key-dot    { background: #2c2c54; }
+.osk-key.key-sym    { flex: 1.5; background: #1b4f72; }
+
+/* Tap ripple effect */
+.osk-key::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.osk-key.ripple::after {
+  opacity: 1;
+}
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+}

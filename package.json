@@ -1,0 +1,19 @@
+{
+  "name": "accessscan",
+  "version": "1.0.0",
+  "description": "AccessScan — Universal Single-Switch Browser Assistant (Chrome Extension)",
+  "private": true,
+  "scripts": {
+    "test": "npx playwright test tests/accessscan.test.js",
+    "test:ui": "npx playwright test --ui",
+    "test:headed": "npx playwright test --headed",
+    "zip": "powershell Compress-Archive -Path manifest.json,src -DestinationPath accessscan-v1.0.0.zip -Force"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "playwright": "^1.40.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
