@@ -46,6 +46,13 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
 // ── Message handling ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'OPEN_CAMERA_PAGE' || message.type === 'OPEN_CAMERA_PAGE') {
+    const url = chrome.runtime.getURL('src/camera/camera.html');
+    chrome.tabs.create({ url });
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (message.type === 'NAVIGATE_BACK') {
     const tabId = sender.tab?.id;
     if (!tabId) {

@@ -515,6 +515,16 @@ function bindEvents() {
     }
   });
 
+  // Setup Camera & Permission helper tab
+  const btnSetupCamera = document.getElementById('btn-setup-camera');
+  btnSetupCamera?.addEventListener('click', () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+      chrome.tabs.create({ url: chrome.runtime.getURL('src/camera/camera.html') });
+    } else {
+      window.open(chrome.runtime.getURL('src/camera/camera.html'));
+    }
+  });
+
   // Eye embedded scan speed slider
   eyeScanSpeedSlider?.addEventListener('input', (e) => {
     const speed = parseInt(e.target.value, 10);

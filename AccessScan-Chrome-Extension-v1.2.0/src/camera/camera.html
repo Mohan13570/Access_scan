@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AccessScan — Eye Tracker Camera & Permission Setup</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #0f172a;
+      --border: #1e293b;
+      --accent: #06b6d4;
+      --accent-hover: #0891b2;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .badge-icon {
+      font-size: 38px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #38bdf8;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    p.subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 20px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .status-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-radius: 10px;
+      background: #020617;
+      border: 1.5px solid var(--border);
+      margin-bottom: 18px;
+    }
+
+    .status-banner.granted {
+      border-color: var(--success);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .status-banner.pending {
+      border-color: var(--warning);
+      background: rgba(245, 158, 11, 0.1);
+    }
+
+    .status-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--warning);
+    }
+
+    .status-banner.granted .status-dot {
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
+    }
+
+    .btn-primary {
+      background: #0284c7;
+      color: #ffffff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary:hover {
+      background: #0369a1;
+      transform: translateY(-1px);
+    }
+
+    .video-viewport {
+      position: relative;
+      width: 100%;
+      height: 320px;
+      background: #020617;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 18px;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+
+    canvas#overlay-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+      pointer-events: none;
+    }
+
+    .eye-reticle {
+      position: absolute;
+      top: 20%;
+      left: 20%;
+      width: 60%;
+      height: 55%;
+      border: 2px dashed var(--accent);
+      border-radius: 8px;
+      pointer-events: none;
+      box-sizing: border-box;
+      opacity: 0.7;
+    }
+
+    .readouts-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .metric-box {
+      background: #020617;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      text-align: center;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .metric-value {
+      font-size: 18px;
+      font-weight: 800;
+      font-family: monospace;
+      color: #38bdf8;
+    }
+
+    .metric-value.blink {
+      color: var(--warning);
+    }
+
+    .metric-value.success {
+      color: var(--success);
+    }
+
+    .controls-row {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+
+    .slider-group {
+      flex: 1;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .instructions-card {
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    .instructions-card ul {
+      padding-left: 20px;
+      margin-top: 8px;
+    }
+
+    .instructions-card li {
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <span class="badge-icon">👁️</span>
+      <h1>AccessScan Camera &amp; Vision Setup</h1>
+      <p class="subtitle">Grant camera permission and test your Eye-Blink detection in real time.</p>
+    </header>
+
+    <!-- Permission Status Banner -->
+    <div id="permission-banner" class="status-banner pending">
+      <div class="status-info">
+        <div class="status-dot" id="status-dot"></div>
+        <div>
+          <div id="status-title" style="font-weight: 800; font-size: 15px;">Camera Permission: Pending</div>
+          <div id="status-sub" style="font-size: 12px; color: var(--text-muted);">Click the button to allow camera access for AccessScan.</div>
+        </div>
+      </div>
+      <button type="button" id="btn-request-permission" class="btn-primary">
+        <span>📷 Allow Camera Access</span>
+      </button>
+    </div>
+
+    <!-- Live Webcam Viewport -->
+    <div class="card">
+      <div class="video-viewport">
+        <video id="webcam-video" autoplay playsinline muted></video>
+        <canvas id="overlay-canvas" width="640" height="480"></canvas>
+        <div class="eye-reticle"></div>
+        <div id="no-camera-msg" style="position: absolute; text-align: center; color: var(--text-muted); font-size: 14px;">
+          📷 Camera stream is currently stopped.<br />Click <strong>Allow Camera Access</strong> above.
+        </div>
+      </div>
+
+      <!-- Real-time Vision Metrics -->
+      <div class="readouts-row">
+        <div class="metric-box">
+          <div class="metric-label">Live Eye Aperture (EAR)</div>
+          <div id="metric-ear" class="metric-value">0.28</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Eye State</div>
+          <div id="metric-state" class="metric-value">OPEN</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Blinks Detected</div>
+          <div id="metric-blinks" class="metric-value">0</div>
+        </div>
+      </div>
+
+      <!-- Sensitivity Slider -->
+      <div class="slider-group">
+        <div class="slider-header">
+          <span>Blink Sensitivity Threshold</span>
+          <span id="slider-ear-val" style="color: #38bdf8; font-weight: 700; font-family: monospace;">0.22</span>
+        </div>
+        <input type="range" id="sensitivity-slider" min="0.14" max="0.32" step="0.01" value="0.22" />
+        <div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-muted); margin-top:4px;">
+          <span>0.14 (Strict / Deep Blink)</span>
+          <span>0.22 (Normal Recommended)</span>
+          <span>0.32 (Light Blink)</span>
+        </div>
+      </div>
+
+      <div class="controls-row" style="margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <button type="button" id="btn-test-trigger" class="btn-primary" style="background:#0f172a; border:1px solid #0284c7; color:#38bdf8;">
+          ⚡ Simulate Blink Selection
+        </button>
+        <button type="button" id="btn-close-tab" class="btn-primary" style="background:#059669;">
+          ✓ Done — Ready to Navigate
+        </button>
+      </div>
+    </div>
+
+    <!-- Helpful Tips -->
+    <div class="card instructions-card">
+      <strong style="color: #38bdf8; font-size: 14px;">💡 How Eye Tracking Works with AccessScan:</strong>
+      <ul>
+        <li><strong>One deliberate long blink</strong>: Selects the highlighted webpage control or opens the on-screen keyboard.</li>
+        <li><strong>Two intentional blinks</strong>: Exits the virtual keyboard, closes dialogs, or returns back.</li>
+        <li><strong>Hold eyes closed briefly</strong>: Pauses the scanner or opens the Emergency menu.</li>
+        <li><strong>Positioning Tip</strong>: Position your face comfortably in front of your webcam so your eyes appear inside the dashed guide box.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script src="camera.js"></script>
+</body>
+</html>
