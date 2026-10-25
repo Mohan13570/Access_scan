@@ -93,6 +93,7 @@
 #accessscan-overlay[data-mode="keyboard"] #as-overlay-mode { background: #58a6ff !important; }
 #accessscan-overlay[data-mode="choose-option"] #as-overlay-mode { background: #3fb950 !important; }
 #accessscan-overlay[data-mode="cred-prompt"] #as-overlay-mode { background: #d29922 !important; }
+#accessscan-overlay[data-mode="back"] #as-overlay-mode { background: #8957e5 !important; }
 
 #as-overlay-element-label {
   display: inline-block !important;

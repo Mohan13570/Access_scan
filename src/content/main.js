@@ -1,21 +1,27 @@
 /**
- * AccessScan v2.0 — Main Orchestrator
+ * AccessScan v2.0 — Main Navigation Orchestrator & State Machine
  *
- * Four-key navigation state machine:
- *   IDLE
- *     ↓ (auto-init if enabled OR Start clicked)
- *   NAVIGATING  ← RIGHT/LEFT move focus, DOWN activates, UP backs out/stops
- *     ↓ DOWN on text/password input
- *   OSK_OPEN    ← Linear 4-key typing, UP exits immediately to webpage
- *     ↓ UP or DONE
- *   NAVIGATING  ← Active input restored; RIGHT moves to next field
+ * Full 4-Key Accessibility System with Authoritative Interaction States:
+ *   - WEBSITE_NAVIGATION: Right/Left move focus, Down activates, Up requests Browser Back.
+ *   - VIRTUAL_KEYBOARD: Right/Left move linearly across keys, Down types, Up exits to page.
+ *   - PAGE_GROUP: Section traversal; Down enters group, Up returns to sections list.
+ *   - DIALOG: Modal/custom dropdowns; Down activates, Up cancels/closes dialog.
+ *   - BROWSER_BACK_PENDING: Transit state; blocks key repetition while navigating back.
+ *   - DISABLED: Extension idle; normal browser behavior untouched.
  *
- * Fully supports:
- *  - Automatic activation across supported websites
- *  - SPA URL change detection without full reload
- *  - Unobtrusive floating accessibility badge
- *  - Central keyboard event controller with explicit modes
- *  - Framework-safe input insertion (React/Vue/Angular)
+ * Deterministic Back Priority Order for UP ARROW:
+ *   1. VIRTUAL_KEYBOARD -> Close OSK, preserve entered text, restore focus to active input.
+ *   2. DIALOG -> Dismiss/cancel open extension dialog.
+ *   3. PAGE_GROUP -> Return to parent section hierarchy.
+ *   4. Submenu / temporary selection -> Return to parent interface.
+ *   5. WEBSITE_NAVIGATION -> Request real browser Back via service worker (or fallback).
+ *
+ * Reliability & Lifecycle Features:
+ *   - Auto-activation across supported websites.
+ *   - Real browser Back (`chrome.tabs.goBack`) preserving session history across origins.
+ *   - bfcache restoration (`pageshow` event handling).
+ *   - SPA route change observation (History API + popstate/hashchange).
+ *   - React/Vue/Angular controlled input support.
  */
 
 'use strict';
@@ -28,17 +34,27 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 } else {
   window.__ACCESSSCAN_INITIALIZED__ = true;
 
-  // ── State enum ──────────────────────────────────────────────────────────────
+  // ── Authoritative Navigation State Enum ─────────────────────────────────────
+  const NavState = window.AccessScan.NavState || {
+    WEBSITE_NAVIGATION: 'WEBSITE_NAVIGATION',
+    VIRTUAL_KEYBOARD: 'VIRTUAL_KEYBOARD',
+    PAGE_GROUP: 'PAGE_GROUP',
+    DIALOG: 'DIALOG',
+    BROWSER_BACK_PENDING: 'BROWSER_BACK_PENDING',
+    DISABLED: 'DISABLED',
+  };
+
+  // Backwards-compatible aliases
   const AS_State = {
-    IDLE: 'IDLE',
-    NAVIGATING: 'NAVIGATING',
-    OSK_OPEN: 'OSK_OPEN',
-    SELECT_OPEN: 'SELECT_OPEN',
-    CRED_PROMPT: 'CRED_PROMPT',
+    IDLE: NavState.DISABLED,
+    NAVIGATING: NavState.WEBSITE_NAVIGATION,
+    OSK_OPEN: NavState.VIRTUAL_KEYBOARD,
+    SELECT_OPEN: NavState.DIALOG,
+    CRED_PROMPT: NavState.DIALOG,
   };
 
   // ── Module-level state ──────────────────────────────────────────────────────
-  let _state = AS_State.IDLE;
+  let _state = NavState.DISABLED;
   let _settings = null;
   let _controller = null;       // FourKeyController
   let _overlay = null;          // OverlayPanel
@@ -51,10 +67,10 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   let _flatElements = [];
   let _flatIndex = 0;
 
-  // The input el currently being typed into via OSK
+  // Active input element
   let _activeInputEl = null;
 
-  // DOM observer
+  // Observers and navigation tracking
   let _domObserver = null;
   let _domDebounce = null;
   let _lastUrl = window.location.href;
@@ -81,9 +97,9 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.type === 'SETTINGS_UPDATED') {
         _settings = msg.settings;
-        if (_settings?.enabled && _state === AS_State.IDLE) {
+        if (_settings?.enabled && _state === NavState.DISABLED) {
           startNav();
-        } else if (!_settings?.enabled && _state !== AS_State.IDLE) {
+        } else if (!_settings?.enabled && _state !== NavState.DISABLED) {
           stopNav(false);
         }
         sendResponse({ ok: true });
@@ -95,12 +111,12 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
         return false;
       }
       if (msg.type === 'START_SCANNER') {
-        if (_state === AS_State.IDLE) startNav();
+        if (_state === NavState.DISABLED) startNav();
         sendResponse({ ok: true });
         return false;
       }
       if (msg.type === 'STOP_SCANNER') {
-        if (_state !== AS_State.IDLE) stopNav(true);
+        if (_state !== NavState.DISABLED) stopNav(true);
         sendResponse({ ok: true });
         return false;
       }
@@ -111,16 +127,19 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       return false;
     });
 
-    // Storage change listener (syncs state across tabs)
+    // Storage change listener (syncs across tabs)
     try {
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
           if (area === 'sync' && changes.settings?.newValue) {
             _settings = changes.settings.newValue;
-            if (_settings.enabled && _state === AS_State.IDLE) {
+            if (_settings.enabled && _state === NavState.DISABLED) {
               startNav();
-            } else if (!_settings.enabled && _state !== AS_State.IDLE) {
+            } else if (!_settings.enabled && _state !== NavState.DISABLED) {
               stopNav(false);
+            } else if (_settings.enabled) {
+              refreshElements();
+              highlightCurrent();
             }
           }
         });
@@ -139,7 +158,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 
     // Focus synchronization
     document.addEventListener('focusin', (e) => {
-      if (_state === AS_State.NAVIGATING && e.target && _flatElements.length > 0) {
+      if (_state === NavState.WEBSITE_NAVIGATION && e.target && _flatElements.length > 0) {
         const idx = _flatElements.indexOf(e.target);
         if (idx !== -1) {
           _flatIndex = idx;
@@ -164,6 +183,32 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       onUrlChanged();
     };
 
+    // bfcache & page restore listener
+    window.addEventListener('pageshow', (event) => {
+      if (_state === NavState.BROWSER_BACK_PENDING) {
+        _state = NavState.WEBSITE_NAVIGATION;
+      }
+      if (_settings?.enabled !== false) {
+        if (_state === NavState.DISABLED) {
+          startNav();
+        } else {
+          _overlay.mount();
+          _overlay.setMode('NAVIGATING');
+          refreshElements();
+          if (_flatElements.length > 0) {
+            highlightCurrent();
+          }
+        }
+      }
+    });
+
+    // Page hide listener
+    window.addEventListener('pagehide', () => {
+      if (_state === NavState.BROWSER_BACK_PENDING) {
+        _state = NavState.WEBSITE_NAVIGATION;
+      }
+    });
+
     // Automatic activation if user has AccessScan enabled (default: true)
     if (_settings?.enabled !== false) {
       startNav();
@@ -187,7 +232,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 
   function getDefaultSettings() {
     return {
-      enabled: true, // Enabled by default for automatic operation across websites
+      enabled: true,
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
@@ -202,9 +247,10 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     _lastUrl = window.location.href;
 
     setTimeout(() => {
-      if (_state !== AS_State.IDLE) {
-        if (_state === AS_State.OSK_OPEN) closeOSK(false);
-        if (_state === AS_State.SELECT_OPEN) closeSelectDialog();
+      if (_state !== NavState.DISABLED) {
+        if (_state === NavState.VIRTUAL_KEYBOARD) closeOSK(false);
+        if (_state === NavState.DIALOG) closeSelectDialog();
+        _state = NavState.WEBSITE_NAVIGATION;
         _flatIndex = 0;
         refreshElements();
         if (_flatElements.length > 0) {
@@ -216,12 +262,12 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 
   // ── Start / Stop ────────────────────────────────────────────────────────────
   function toggleAccessScan() {
-    if (_state === AS_State.IDLE) startNav();
+    if (_state === NavState.DISABLED) startNav();
     else stopNav(true);
   }
 
   function startNav() {
-    _state = AS_State.NAVIGATING;
+    _state = NavState.WEBSITE_NAVIGATION;
     _settings = _settings || getDefaultSettings();
     _settings.enabled = true;
 
@@ -235,7 +281,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     // Mount unobtrusive HUD badge
     _overlay.mount();
     _overlay.setMode('NAVIGATING');
-    _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Stop' });
+    _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
 
     // Create central four-key controller
     if (!_controller) {
@@ -244,19 +290,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
         onPrev: handlePrev,
         onActivate: handleActivate,
         onBack: handleBack,
-        getMode: () => {
-          switch (_state) {
-            case AS_State.NAVIGATING:
-              return window.AccessScan.ControllerMode.NAVIGATION_MODE;
-            case AS_State.OSK_OPEN:
-              return window.AccessScan.ControllerMode.VIRTUAL_KEYBOARD_MODE;
-            case AS_State.SELECT_OPEN:
-            case AS_State.CRED_PROMPT:
-              return window.AccessScan.ControllerMode.DIALOG_MODE;
-            default:
-              return window.AccessScan.ControllerMode.DISABLED;
-          }
-        },
+        getMode: () => _state,
         onKeyboardKey: forwardKeyToOSK,
         getSettings: () => _settings,
       });
@@ -274,7 +308,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   function stopNav(persistDisabled = true) {
-    _state = AS_State.IDLE;
+    _state = NavState.DISABLED;
     if (persistDisabled && _settings) {
       _settings.enabled = false;
       try {
@@ -298,14 +332,14 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   // ── Element collection ──────────────────────────────────────────────────────
-  function refreshElements() {
+  function refreshElements(preserveState = false) {
     const mode = _settings?.scanMode ?? 'flat';
 
     if (mode === 'hierarchical') {
       if (!_hierarchyMgr) {
         _hierarchyMgr = new window.AccessScan.HierarchyManager();
       }
-      _hierarchyMgr.load();
+      _hierarchyMgr.load(preserveState);
       _flatElements = [];
       _flatIndex = 0;
     } else {
@@ -318,21 +352,21 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   function onDOMMutated() {
-    if (_state === AS_State.IDLE) return;
-    refreshElements();
+    if (_state === NavState.DISABLED || _state === NavState.BROWSER_BACK_PENDING) return;
+    refreshElements(true);
 
     if (_flatElements.length > 0 && _flatIndex >= _flatElements.length) {
       _flatIndex = Math.max(0, _flatElements.length - 1);
     }
 
-    if (_state === AS_State.NAVIGATING) {
+    if (_state === NavState.WEBSITE_NAVIGATION) {
       highlightCurrent();
     }
   }
 
   // ── Navigation handlers ─────────────────────────────────────────────────────
   function handleNext() {
-    if (_state !== AS_State.NAVIGATING) return;
+    if (_state !== NavState.WEBSITE_NAVIGATION && _state !== NavState.PAGE_GROUP) return;
     const mode = _settings?.scanMode ?? 'flat';
 
     if (mode === 'hierarchical' && _hierarchyMgr) {
@@ -346,7 +380,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   function handlePrev() {
-    if (_state !== AS_State.NAVIGATING) return;
+    if (_state !== NavState.WEBSITE_NAVIGATION && _state !== NavState.PAGE_GROUP) return;
     const mode = _settings?.scanMode ?? 'flat';
 
     if (mode === 'hierarchical' && _hierarchyMgr) {
@@ -368,12 +402,13 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   function handleActivate() {
-    if (_state !== AS_State.NAVIGATING) return;
+    if (_state !== NavState.WEBSITE_NAVIGATION && _state !== NavState.PAGE_GROUP) return;
     const mode = _settings?.scanMode ?? 'flat';
 
     if (mode === 'hierarchical' && _hierarchyMgr) {
       if (_hierarchyMgr.isAtSectionLevel) {
         _hierarchyMgr.selectSection();
+        _state = NavState.PAGE_GROUP;
         _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back to sections' });
         highlightCurrent();
         return;
@@ -384,31 +419,129 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     }
   }
 
-  function handleBack() {
+  // ── Deterministic UP ARROW Handler ──────────────────────────────────────────
+  async function handleBack() {
+    console.log('[AccessScan v2] handleBack invoked, state =', _state, 'mode =', _settings?.scanMode);
     switch (_state) {
-      case AS_State.OSK_OPEN:
+      case NavState.VIRTUAL_KEYBOARD:
+        // Priority 1: Close virtual keyboard, preserve text, return to website navigation
         closeOSK(true);
         break;
-      case AS_State.SELECT_OPEN:
-        closeSelectDialog();
+
+      case NavState.DIALOG:
+        // Priority 2: Handle extension dialog Back or Cancel
+        if (_selectDialog) {
+          closeSelectDialog();
+        } else if (_credPromptData) {
+          dismissCredPrompt();
+        } else {
+          _state = NavState.WEBSITE_NAVIGATION;
+          _overlay.setMode('NAVIGATING');
+          highlightCurrent();
+        }
         break;
-      case AS_State.CRED_PROMPT:
-        dismissCredPrompt();
+
+      case NavState.PAGE_GROUP:
+        // Priority 3: Inside nested group; return to parent group
+        if (_hierarchyMgr) {
+          _hierarchyMgr.backToSections();
+        }
+        _state = NavState.WEBSITE_NAVIGATION;
+        _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Enter section', up: 'Browser Back' });
+        highlightCurrent();
         break;
-      case AS_State.NAVIGATING: {
+
+      case NavState.WEBSITE_NAVIGATION: {
         const mode = _settings?.scanMode ?? 'flat';
         if (mode === 'hierarchical' && _hierarchyMgr && !_hierarchyMgr.isAtSectionLevel) {
           _hierarchyMgr.backToSections();
-          _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Enter section', up: 'Stop' });
+          _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Enter section', up: 'Browser Back' });
           highlightCurrent();
-        } else {
-          stopNav(false);
-          _overlay.flash('AccessScan paused on page.');
+          return;
         }
+
+        // Priority 5: Top-level website navigation -> Real browser Back navigation!
+        await requestBrowserBack();
         break;
       }
+
       default:
         break;
+    }
+  }
+
+  // ── Real Browser Back Navigation ────────────────────────────────────────────
+  async function requestBrowserBack() {
+    if (_state === NavState.BROWSER_BACK_PENDING) return;
+
+    // Check if current tab was opened directly without prior history
+    if (window.history && window.history.length <= 1) {
+      _state = NavState.WEBSITE_NAVIGATION;
+      _overlay.setMode('NAVIGATING');
+      _overlay.flash('No previous history entry available.', 3000);
+      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+      highlightCurrent();
+      return;
+    }
+
+    _state = NavState.BROWSER_BACK_PENDING;
+    _overlay.setMode('BACK');
+    _overlay.flash('Navigating back...', 2000);
+
+    try {
+      let resp = null;
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        resp = await chrome.runtime.sendMessage({ type: 'NAVIGATE_BACK' }).catch(() => null);
+      }
+
+      if (resp && resp.success) {
+        // Navigation initiated; destination page will load content script.
+        // Safety timeout in case navigation is cancelled or page does not unload:
+        setTimeout(() => {
+          if (_state === NavState.BROWSER_BACK_PENDING) {
+            _state = NavState.WEBSITE_NAVIGATION;
+            _overlay.setMode('NAVIGATING');
+            _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+            highlightCurrent();
+          }
+        }, 1500);
+        return;
+      }
+
+      // If service worker reports no history entry available or failure:
+      if (resp && !resp.success) {
+        _state = NavState.WEBSITE_NAVIGATION;
+        _overlay.setMode('NAVIGATING');
+        _overlay.flash('No previous history entry available.', 3000);
+        _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+        highlightCurrent();
+        return;
+      }
+
+      // Fallback only if service worker was unreachable: Use window.history.back()
+      if (window.history && window.history.length > 1) {
+        window.history.back();
+        setTimeout(() => {
+          if (_state === NavState.BROWSER_BACK_PENDING) {
+            _state = NavState.WEBSITE_NAVIGATION;
+            _overlay.setMode('NAVIGATING');
+            _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+            highlightCurrent();
+          }
+        }, 1500);
+      } else {
+        _state = NavState.WEBSITE_NAVIGATION;
+        _overlay.setMode('NAVIGATING');
+        _overlay.flash('No previous history entry available.', 3000);
+        _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+        highlightCurrent();
+      }
+    } catch (_) {
+      _state = NavState.WEBSITE_NAVIGATION;
+      _overlay.setMode('NAVIGATING');
+      _overlay.flash('No previous history entry available.', 3000);
+      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
+      highlightCurrent();
     }
   }
 
@@ -489,7 +622,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   function openOSK(inputEl) {
     if (_oskIframe) closeOSK(false);
 
-    _state = AS_State.OSK_OPEN;
+    _state = NavState.VIRTUAL_KEYBOARD;
     _overlay.setMode('KEYBOARD');
     _overlay.setHints({ left: 'Prev key', right: 'Next key', down: 'Type key', up: 'Exit to page' });
 
@@ -544,10 +677,10 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     }
     document.body.style.marginBottom = '';
 
-    if (_state === AS_State.OSK_OPEN && resumeNav) {
-      _state = AS_State.NAVIGATING;
+    if (_state === NavState.VIRTUAL_KEYBOARD && resumeNav) {
+      _state = NavState.WEBSITE_NAVIGATION;
       _overlay.setMode('NAVIGATING');
-      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Stop' });
+      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
 
       // Restore highlight and position to the previous input field
       if (previousInput && _flatElements.length > 0) {
@@ -590,7 +723,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   // ── Select Dialog ───────────────────────────────────────────────────────────
   function openSelectDialog(selectEl) {
     if (_selectDialog) closeSelectDialog();
-    _state = AS_State.SELECT_OPEN;
+    _state = NavState.DIALOG;
     _selectEl = selectEl;
     _overlay.setMode('CHOOSE OPTION');
     _overlay.setHints({ left: 'Prev option', right: 'Next option', down: 'Confirm', up: 'Cancel' });
@@ -663,10 +796,10 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     _selectOptions = [];
     _selectEl = null;
 
-    if (_state === AS_State.SELECT_OPEN) {
-      _state = AS_State.NAVIGATING;
+    if (_state === NavState.DIALOG) {
+      _state = NavState.WEBSITE_NAVIGATION;
       _overlay.setMode('NAVIGATING');
-      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Stop' });
+      _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
       highlightCurrent();
     }
 
@@ -704,7 +837,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   function showCredPrompt(username) {
-    _state = AS_State.CRED_PROMPT;
+    _state = NavState.DIALOG;
     _credPromptOptions = ['save', 'skip'];
     _credPromptIndex = 0;
 
@@ -762,7 +895,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     const dlg = document.getElementById('accessscan-cred-prompt');
     if (dlg) dlg.remove();
     _credPromptData = null;
-    _state = AS_State.NAVIGATING;
+    _state = NavState.WEBSITE_NAVIGATION;
 
     if (_controller) {
       _controller.onNext = handleNext;
@@ -771,7 +904,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       _controller.onBack = handleBack;
     }
     _overlay.setMode('NAVIGATING');
-    _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Stop' });
+    _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
   }
 
   // ── Framework-safe Input Helpers ────────────────────────────────────────────

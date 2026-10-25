@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>access scan1 Controls</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      width: 320px;
+      padding: 16px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1c1917;
+      color: #fafaf8;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #b45309;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fafaf8;
+      letter-spacing: 0.3px;
+    }
+    .badge {
+      background: #b45309;
+      color: #ffffff;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+    .status-card {
+      background: #292524;
+      border: 1px solid #44403c;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .status-label {
+      font-size: 11px;
+      color: #a8a29e;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .status-val {
+      font-size: 12px;
+      font-weight: 700;
+      color: #3fb950;
+    }
+    .status-val.paused {
+      color: #eab308;
+    }
+    .btn {
+      width: 100%;
+      background: #b45309;
+      color: #ffffff;
+      font-weight: 700;
+      border: none;
+      padding: 10px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.1s ease;
+      margin-bottom: 8px;
+    }
+    .btn:hover { background: #d97706; }
+    .btn-secondary {
+      background: #292524;
+      border: 1px solid #78716c;
+      color: #fafaf8;
+    }
+    .btn-secondary:hover { background: #44403c; }
+    .row {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #d6d1c4;
+    }
+    select {
+      background: #292524;
+      color: #fafaf8;
+      border: 1px solid #78716c;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .instructions {
+      margin-top: 14px;
+      padding-top: 10px;
+      border-top: 1px solid #44403c;
+      font-size: 11px;
+      color: #a8a29e;
+      line-height: 1.5;
+    }
+    .instructions strong {
+      color: #fef3c7;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <span style="font-size: 20px;">♿</span>
+      <h3>access scan1</h3>
+    </div>
+    <span class="badge">v1.0.0</span>
+  </div>
+
+  <div class="status-card">
+    <span class="status-label">Scanner Status</span>
+    <span id="statusIndicator" class="status-val">● Scanning Active</span>
+  </div>
+
+  <button id="toggleBtn" class="btn">Pause / Resume (P)</button>
+  <button id="switchBtn" class="btn btn-secondary">⚡ Trigger Switch (Spacebar)</button>
+
+  <div class="row">
+    <label for="speedSelect">Scan Speed:</label>
+    <select id="speedSelect">
+      <option value="2000">2.0s (Slow)</option>
+      <option value="1500" selected>1.5s (Normal)</option>
+      <option value="1000">1.0s (Fast)</option>
+      <option value="700">0.7s (Very Fast)</option>
+    </select>
+  </div>
+
+  <div class="instructions">
+    <p>🎮 <strong>Controls:</strong></p>
+    <p>• <strong>Spacebar:</strong> Switch trigger (Select group or control)</p>
+    <p>• <strong>P:</strong> Pause or resume auto-scanner</p>
+    <p>• <strong>Esc:</strong> Return to section level or exit keyboard</p>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

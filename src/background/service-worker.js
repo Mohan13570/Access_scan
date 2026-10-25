@@ -37,6 +37,28 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
 
 // ── Message handling ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'NAVIGATE_BACK') {
+    const tabId = sender.tab?.id;
+    if (!tabId) {
+      sendResponse({ success: false, error: 'No sender tab identifier' });
+      return false;
+    }
+
+    if (typeof chrome.tabs.goBack === 'function') {
+      chrome.tabs.goBack(tabId)
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((err) => {
+          sendResponse({ success: false, error: err?.message || 'No previous history entry' });
+        });
+      return true;
+    } else {
+      sendResponse({ success: false, error: 'chrome.tabs.goBack not supported' });
+      return false;
+    }
+  }
+
   if (message.type === 'GET_SETTINGS') {
     chrome.storage.sync.get('settings').then(({ settings }) => {
       sendResponse({ settings: settings ?? DEFAULT_SETTINGS });

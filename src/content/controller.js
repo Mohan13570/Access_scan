@@ -1,25 +1,26 @@
 /**
- * AccessScan v2.0 — Central Four-Key Controller
+ * AccessScan v2.0 — Central Four-Key Navigation Controller
  *
- * Dispatches arrow-key events according to explicit application modes:
- *   - DISABLED: No interception; full native browser scrolling/navigation preserved.
- *   - NAVIGATION_MODE: Right/Left move focus, Down activates control, Up backs out/stops.
- *   - VIRTUAL_KEYBOARD_MODE: Right/Left move linearly across keyboard, Down types, Up exits OSK.
- *   - DIALOG_MODE: Right/Left cycle options, Down confirms, Up dismisses.
- *
- * Strict single-event processing (debounced), event.preventDefault/stopPropagation
- * applied ONLY when AccessScan is actively handling the key.
+ * Dispatches arrow-key events through an authoritative state machine:
+ *   - WEBSITE_NAVIGATION: Standard webpage element traversal and universal Down activation.
+ *   - VIRTUAL_KEYBOARD: Linear key navigation, character insertion, Up exits to webpage.
+ *   - PAGE_GROUP: Section-level scanning; Down enters section, Up returns to parent.
+ *   - DIALOG: Trapped inside active modal/dialog; Up cancels/dismisses.
+ *   - BROWSER_BACK_PENDING: Navigation transit state; blocks duplicate keypresses.
+ *   - DISABLED: Zero interception; full native browser scrolling/navigation preserved.
  */
 
 'use strict';
 
 window.AccessScan = window.AccessScan || {};
 
-const ControllerMode = {
+const NavState = {
+  WEBSITE_NAVIGATION: 'WEBSITE_NAVIGATION',
+  VIRTUAL_KEYBOARD: 'VIRTUAL_KEYBOARD',
+  PAGE_GROUP: 'PAGE_GROUP',
+  DIALOG: 'DIALOG',
+  BROWSER_BACK_PENDING: 'BROWSER_BACK_PENDING',
   DISABLED: 'DISABLED',
-  NAVIGATION_MODE: 'NAVIGATION_MODE',
-  VIRTUAL_KEYBOARD_MODE: 'VIRTUAL_KEYBOARD_MODE',
-  DIALOG_MODE: 'DIALOG_MODE',
 };
 
 class FourKeyController {
@@ -29,7 +30,7 @@ class FourKeyController {
    * @param {() => void} opts.onPrev          - Left arrow action
    * @param {() => void} opts.onActivate      - Down arrow action
    * @param {() => void} opts.onBack          - Up arrow action
-   * @param {() => string} opts.getMode       - Returns current ControllerMode
+   * @param {() => string} opts.getMode       - Returns current NavState
    * @param {(key: string) => void} opts.onKeyboardKey - Forwards arrow keys to virtual keyboard
    * @param {() => object} opts.getSettings   - Extension settings
    */
@@ -75,27 +76,33 @@ class FourKeyController {
     const ARROW_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'];
     if (!ARROW_KEYS.includes(event.key)) return;
 
-    const mode = this.getMode ? this.getMode() : ControllerMode.DISABLED;
-    if (!mode || mode === ControllerMode.DISABLED) {
+    const mode = this.getMode ? this.getMode() : NavState.DISABLED;
+    console.log('[AccessScan v2] Keydown:', event.key, 'Mode:', mode);
+    if (!mode || mode === NavState.DISABLED) {
       return; // Never intercept when disabled
+    }
+
+    // Always prevent default page scroll for arrow keys when active
+    event.preventDefault();
+    event.stopPropagation();
+
+    // If browser back is already pending, discard key to prevent repeated requests
+    if (mode === NavState.BROWSER_BACK_PENDING) {
+      return;
     }
 
     const now = Date.now();
     if (this._heldKeys.has(event.key) && now - this._lastKeyTime < this._DEBOUNCE_MS) {
-      event.preventDefault();
-      event.stopPropagation();
       return;
     }
 
     this._lastKeyTime = now;
     this._heldKeys.add(event.key);
 
-    // Prevent default scrolling and stop propagation for active AccessScan handling
-    event.preventDefault();
-    event.stopPropagation();
-
     switch (mode) {
-      case ControllerMode.NAVIGATION_MODE:
+      case NavState.WEBSITE_NAVIGATION:
+      case NavState.PAGE_GROUP:
+      case NavState.DIALOG:
         switch (event.key) {
           case 'ArrowRight':
             this._beep('nav');
@@ -116,36 +123,15 @@ class FourKeyController {
         }
         break;
 
-      case ControllerMode.VIRTUAL_KEYBOARD_MODE:
+      case NavState.VIRTUAL_KEYBOARD:
         if (event.key === 'ArrowUp') {
           this._beep('back');
-          this.onBack(); // Immediate UP arrow exit from keyboard
+          this.onBack(); // Immediate UP arrow exit from keyboard back to webpage
         } else {
           this._beep(event.key === 'ArrowDown' ? 'select' : 'nav');
           if (this.onKeyboardKey) {
             this.onKeyboardKey(event.key);
           }
-        }
-        break;
-
-      case ControllerMode.DIALOG_MODE:
-        switch (event.key) {
-          case 'ArrowRight':
-            this._beep('nav');
-            this.onNext();
-            break;
-          case 'ArrowLeft':
-            this._beep('nav');
-            this.onPrev();
-            break;
-          case 'ArrowDown':
-            this._beep('select');
-            this.onActivate();
-            break;
-          case 'ArrowUp':
-            this._beep('back');
-            this.onBack();
-            break;
         }
         break;
     }
@@ -179,5 +165,6 @@ class FourKeyController {
   }
 }
 
-window.AccessScan.ControllerMode = ControllerMode;
+window.AccessScan.NavState = NavState;
+window.AccessScan.ControllerMode = NavState; // Backwards compatibility
 window.AccessScan.FourKeyController = FourKeyController;

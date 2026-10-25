@@ -26,9 +26,26 @@ class HierarchyManager {
 
   /**
    * Initialize with fresh section data from the scanner.
+   * @param {boolean} preserveState Whether to retain current level and indices if valid.
    */
-  load() {
+  load(preserveState = false) {
+    const prevLevel = this.level;
+    const prevSectionIdx = this.sectionIndex;
+    const prevElementIdx = this.elementIndex;
+
     this.sections = window.AccessScan.Scanner.collectHierarchicalSections();
+
+    if (preserveState && this.sections.length > 0) {
+      this.sectionIndex = Math.min(prevSectionIdx, this.sections.length - 1);
+      this.level = prevLevel;
+      if (prevLevel === 'elements') {
+        const sec = this.sections[this.sectionIndex];
+        this.currentElements = sec ? sec.children : [];
+        this.elementIndex = Math.min(prevElementIdx, Math.max(0, this.currentElements.length - 1));
+        return;
+      }
+    }
+
     this.sectionIndex = 0;
     this.level = 'sections';
     this.currentElements = [];
