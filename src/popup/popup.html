@@ -138,9 +138,48 @@
         </div>
       </div>
 
+      <!-- Gesture Action Cheatsheet Table -->
+      <div class="gesture-table-container" style="margin-top: 12px;">
+        <label class="group-label">Gesture-to-Action Mapping</label>
+        <table class="gesture-mapping-table">
+          <thead>
+            <tr>
+              <th style="width: 50%;">Gesture</th>
+              <th style="width: 50%;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Normal blink</strong></td>
+              <td><span class="action-tag action-ignore">No action</span></td>
+            </tr>
+            <tr>
+              <td><strong>One deliberate long blink</strong></td>
+              <td><span class="action-tag action-select">Select highlighted control</span></td>
+            </tr>
+            <tr>
+              <td><strong>Two intentional blinks</strong></td>
+              <td><span class="action-tag action-back">Back or cancel</span></td>
+            </tr>
+            <tr>
+              <td><strong>Hold eyes closed briefly</strong></td>
+              <td><span class="action-tag action-emergency">Pause or open emergency menu</span></td>
+            </tr>
+            <tr>
+              <td><strong>Look left/right</strong></td>
+              <td><span class="action-tag action-nav">Change highlighted control</span></td>
+            </tr>
+            <tr>
+              <td><strong>Look up/down</strong></td>
+              <td><span class="action-tag action-menu">Move through menu items</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Gesture Selection -->
       <div class="setting-subgroup">
-        <label class="group-label">Blink Trigger Mode</label>
+        <label class="group-label">Blink Mode</label>
         <div class="gesture-pill-group" role="radiogroup" aria-label="Blink gesture">
           <button type="button" class="gesture-btn active" data-gesture="single-blink">
             <span class="g-title">1 Blink</span>
