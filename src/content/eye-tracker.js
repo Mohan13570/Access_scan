@@ -83,7 +83,7 @@ class EyeTracker {
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   async start(options = {}) {
-    if (this.isActive) {
+    if (this.isActive && this.stream) {
       this.updateConfig(options);
       return;
     }
@@ -91,25 +91,69 @@ class EyeTracker {
     this.updateConfig(options);
 
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 320 },
-          height: { ideal: 240 },
-          frameRate: { ideal: 30 },
-        },
-        audio: false,
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Webcam API is not supported in this frame or context');
+      }
+
+      // 1. Try with user-facing camera constraints with universal fallback
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'user',
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+          },
+          audio: false,
+        });
+      } catch (e1) {
+        // Universal fallback without constraints (supported on 100% of webcams)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      this.stream = stream;
+
+      // 2. Properly configure hidden video element in DOM
+      if (!this.videoEl) {
+        this.videoEl = document.createElement('video');
+        this.videoEl.id = 'access-scan-hidden-video';
+        this.videoEl.setAttribute('playsinline', 'true');
+        this.videoEl.setAttribute('muted', 'true');
+        this.videoEl.setAttribute('autoplay', 'true');
+        this.videoEl.muted = true;
+        this.videoEl.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:160px;height:120px;opacity:0;pointer-events:none;z-index:-1;';
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.appendChild(this.videoEl);
+        }
+      }
+
+      this.videoEl.srcObject = this.stream;
+
+      // 3. Wait for video to be ready before playing (prevents AbortError / play() rejects)
+      await new Promise((resolve) => {
+        const tryPlay = async () => {
+          try {
+            await this.videoEl.play();
+          } catch (_) {}
+          resolve();
+        };
+
+        if (this.videoEl.readyState >= 1) {
+          tryPlay();
+          return;
+        }
+        this.videoEl.onloadedmetadata = tryPlay;
+        setTimeout(resolve, 1500); // Safety timeout
       });
 
-      this.videoEl = document.createElement('video');
-      this.videoEl.autoplay = true;
-      this.videoEl.playsInline = true;
-      this.videoEl.muted = true;
-      this.videoEl.srcObject = this.stream;
-      await this.videoEl.play();
-
-      this.canvasEl = document.createElement('canvas');
-      this.canvasEl.width = 160;
-      this.canvasEl.height = 120;
+      if (!this.canvasEl && typeof document !== 'undefined') {
+        this.canvasEl = document.createElement('canvas');
+        this.canvasEl.width = 160;
+        this.canvasEl.height = 120;
+      }
 
       this.isActive = true;
       this.emergencyTriggered = false;
@@ -122,18 +166,38 @@ class EyeTracker {
       console.log(`[AccessScan] Advanced Eye Tracker active. Sensitivity: ${this.config.earThreshold}`);
       this.notifyStatus('Eye Tracker Active — Ready');
     } catch (err) {
-      console.warn('[AccessScan] Eye Tracker camera access issue:', err.message);
-      this.showCameraPrompt(err.message);
+      console.warn('[AccessScan] Eye Tracker camera access issue:', err.name, err.message);
+      this.showCameraPrompt(err.name || err.message);
     }
   }
 
-  showCameraPrompt(errorMsg) {
+  showCameraPrompt(errorType = '') {
     if (typeof document === 'undefined') return;
     this.mountHUD();
+
+    const isDenied = String(errorType).includes('NotAllowed') || String(errorType).includes('Permission');
+    const isNotFound = String(errorType).includes('NotFound') || String(errorType).includes('Devices');
+    const isReadable = String(errorType).includes('NotReadable') || String(errorType).includes('TrackStart');
+
+    let mainMsg = '📷 Click to Allow Camera';
+    let subMsg = 'Click this box to enable stream';
+
+    if (isDenied) {
+      mainMsg = '🔒 Camera Blocked / Denied';
+      subMsg = 'Click to open Permission Setup';
+    } else if (isNotFound) {
+      mainMsg = '⚠️ No Webcam Found';
+      subMsg = 'Connect a webcam or use 1-Key mode';
+    } else if (isReadable) {
+      mainMsg = '⚠️ Camera in Use by Another App';
+      subMsg = 'Close other camera apps and click here';
+    }
+
     if (this.hudStatusText) {
-      this.hudStatusText.textContent = 'Camera blocked or prompt needed';
+      this.hudStatusText.textContent = isDenied ? 'Permission needed' : 'Camera inactive';
       this.hudStatusText.style.color = '#fbbf24';
     }
+
     const canvas = document.getElementById('as-eye-hud-canvas');
     if (canvas) {
       const ctx = canvas.getContext('2d');
@@ -143,21 +207,30 @@ class EyeTracker {
         ctx.fillStyle = '#38bdf8';
         ctx.font = 'bold 11px system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('📷 Click to Allow Camera', canvas.width / 2, 50);
+        ctx.fillText(mainMsg, canvas.width / 2, 45);
         ctx.font = '9px system-ui, sans-serif';
-        ctx.fillStyle = '#94a3b8';
-        ctx.fillText('Click this box to enable stream', canvas.width / 2, 70);
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillText(subMsg, canvas.width / 2, 68);
       }
     }
+
     const card = document.getElementById('as-eye-hud-card');
     if (card) {
       card.style.borderColor = '#fbbf24';
       card.style.cursor = 'pointer';
-      card.title = 'Click to grant webcam access for eye tracking';
+      card.title = 'Click to open camera permission manager or grant access';
       card.onclick = () => {
-        card.onclick = null;
-        card.style.cursor = 'default';
-        this.start();
+        // 1. Try starting directly from this click user gesture
+        this.start().catch(() => {});
+
+        // 2. If permission was denied by the browser, open the dedicated extension setup page
+        if (isDenied) {
+          try {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+              chrome.runtime.sendMessage({ action: 'OPEN_CAMERA_PAGE' });
+            }
+          } catch (_) {}
+        }
       };
     }
   }
@@ -179,6 +252,9 @@ class EyeTracker {
 
     if (this.videoEl) {
       this.videoEl.srcObject = null;
+      if (this.videoEl.parentNode) {
+        this.videoEl.parentNode.removeChild(this.videoEl);
+      }
       this.videoEl = null;
     }
 
