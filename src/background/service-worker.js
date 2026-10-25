@@ -40,70 +40,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_SETTINGS') {
     chrome.storage.sync.get('settings').then(({ settings }) => {
       sendResponse({ settings: settings ?? DEFAULT_SETTINGS });
+    }).catch(() => {
+      sendResponse({ settings: DEFAULT_SETTINGS });
     });
     return true;
   }
 
   if (message.type === 'SAVE_SETTINGS') {
     chrome.storage.sync.set({ settings: message.settings }).then(() => {
-      chrome.tabs.query({}, (tabs) => {
+      chrome.tabs.query({}).then((tabs) => {
         tabs.forEach((tab) => {
-          if (tab.id) {
+          if (tab.id && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://') || tab.url.startsWith('file://'))) {
             chrome.tabs.sendMessage(tab.id, {
               type: 'SETTINGS_UPDATED',
               settings: message.settings,
             }).catch(() => {});
           }
         });
-      });
+      }).catch(() => {});
       sendResponse({ ok: true });
+    }).catch((e) => {
+      sendResponse({ error: e.message });
     });
     return true;
   }
 
   if (message.type === 'TOGGLE_SCANNER' || message.type === 'START_SCANNER' || message.type === 'STOP_SCANNER') {
     (async () => {
-      let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      let tab = tabs.find(t => t.id && !t.url?.startsWith('chrome-extension://') && !t.url?.startsWith('chrome://'));
-      if (!tab) {
-        tabs = await chrome.tabs.query({ active: true });
-        tab = tabs.find(t => t.id && !t.url?.startsWith('chrome-extension://') && !t.url?.startsWith('chrome://'));
-      }
-
-      if (tab?.id) {
-        try {
-          const resp = await chrome.tabs.sendMessage(tab.id, { type: message.type });
-          sendResponse(resp);
-        } catch (_) {
-          // Dynamic injection fallback
-          try {
-            await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['src/content/content.css'] }).catch(() => {});
-            await chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: [
-                'src/content/scanner.js',
-                'src/content/highlighter.js',
-                'src/content/hierarchy.js',
-                'src/content/controller.js',
-                'src/content/credentials.js',
-                'src/content/overlay.js',
-                'src/content/main.js'
-              ]
-            });
-            setTimeout(async () => {
-              const retryResp = await chrome.tabs.sendMessage(tab.id, { type: message.type }).catch(() => ({ ok: true }));
-              sendResponse(retryResp);
-            }, 100);
-          } catch (e) {
-            sendResponse({ error: e.message });
-          }
+      try {
+        let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+        let tab = tabs.find(t => t.id && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://') || t.url.startsWith('file://')));
+        if (!tab) {
+          tabs = await chrome.tabs.query({ active: true }).catch(() => []);
+          tab = tabs.find(t => t.id && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://') || t.url.startsWith('file://')));
         }
-      } else {
-        sendResponse({ error: 'No active web tab found' });
+
+        if (tab?.id) {
+          try {
+            const resp = await chrome.tabs.sendMessage(tab.id, { type: message.type });
+            sendResponse(resp || { ok: true });
+          } catch (_) {
+            // Dynamic injection fallback
+            try {
+              await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['src/content/content.css'] }).catch(() => {});
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: [
+                  'src/content/scanner.js',
+                  'src/content/highlighter.js',
+                  'src/content/hierarchy.js',
+                  'src/content/controller.js',
+                  'src/content/credentials.js',
+                  'src/content/overlay.js',
+                  'src/content/main.js'
+                ]
+              });
+              await new Promise(r => setTimeout(r, 120));
+              const retryResp = await chrome.tabs.sendMessage(tab.id, { type: message.type }).catch(() => ({ ok: true }));
+              sendResponse(retryResp || { ok: true });
+            } catch (e) {
+              sendResponse({ error: e.message });
+            }
+          }
+        } else {
+          sendResponse({ error: 'No active web tab found' });
+        }
+      } catch (err) {
+        sendResponse({ error: err.message });
       }
     })();
     return true;
   }
+  return false;
 });
 
 function deepMerge(defaults, overrides) {

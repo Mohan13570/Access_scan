@@ -97,6 +97,17 @@ async function init() {
     return false;
   });
 
+  // Listen for storage changes
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'sync' && changes.settings?.newValue) {
+          _settings = changes.settings.newValue;
+        }
+      });
+    }
+  } catch (_) {}
+
   // Listen for OSK iframe messages
   window.addEventListener('message', handleOSKMessage);
 
@@ -114,12 +125,13 @@ async function init() {
 }
 
 async function loadSettings() {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (resp) => {
-      const err = chrome.runtime.lastError;
-      resolve((!err && resp?.settings) ? resp.settings : getDefaultSettings());
-    });
-  });
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+      const res = await chrome.storage.sync.get('settings');
+      return res?.settings ?? getDefaultSettings();
+    }
+  } catch (_) {}
+  return getDefaultSettings();
 }
 
 function getDefaultSettings() {

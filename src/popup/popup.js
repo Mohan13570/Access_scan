@@ -2,7 +2,8 @@
  * AccessScan v2.0 — Popup Controller
  *
  * Clean tab messaging with dynamic on-demand script injection,
- * safe error consumption, and saved credentials review.
+ * pure Promise-based messaging with zero unhandled runtime ports,
+ * direct chrome.storage.sync integration, and saved credentials review.
  */
 
 'use strict';
@@ -30,16 +31,20 @@ let isNavActive = false;
 
 // ── Helper: get the user's active webpage tab ─────────────────────────────────
 async function getTargetTab() {
-  let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  let tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
-  if (tab) return tab;
+  try {
+    let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+    let tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
+    if (tab) return tab;
 
-  tabs = await chrome.tabs.query({ active: true });
-  tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
-  if (tab) return tab;
+    tabs = await chrome.tabs.query({ active: true }).catch(() => []);
+    tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
+    if (tab) return tab;
 
-  tabs = await chrome.tabs.query({});
-  return tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
+    tabs = await chrome.tabs.query({}).catch(() => []);
+    return tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
+  } catch (_) {
+    return null;
+  }
 }
 
 function isValidWebUrl(url) {
@@ -49,47 +54,36 @@ function isValidWebUrl(url) {
 
 // ── Helper: send message to tab, injecting scripts dynamically if needed ──────
 async function sendTabMessageWithFallback(tabId, message) {
-  return new Promise((resolve) => {
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, message);
+    return resp || { ok: true };
+  } catch (_) {
     try {
-      chrome.tabs.sendMessage(tabId, message, async (response) => {
-        const err = chrome.runtime.lastError;
-        if (err || !response) {
-          try {
-            await chrome.scripting.insertCSS({
-              target: { tabId },
-              files: ['src/content/content.css'],
-            }).catch(() => {});
+      await chrome.scripting.insertCSS({
+        target: { tabId },
+        files: ['src/content/content.css'],
+      }).catch(() => {});
 
-            await chrome.scripting.executeScript({
-              target: { tabId },
-              files: [
-                'src/content/scanner.js',
-                'src/content/highlighter.js',
-                'src/content/hierarchy.js',
-                'src/content/controller.js',
-                'src/content/credentials.js',
-                'src/content/overlay.js',
-                'src/content/main.js'
-              ],
-            });
-
-            setTimeout(() => {
-              chrome.tabs.sendMessage(tabId, message, (retryResp) => {
-                void chrome.runtime.lastError;
-                resolve(retryResp || { ok: true });
-              });
-            }, 120);
-          } catch (injectErr) {
-            resolve({ error: injectErr.message });
-          }
-        } else {
-          resolve(response);
-        }
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: [
+          'src/content/scanner.js',
+          'src/content/highlighter.js',
+          'src/content/hierarchy.js',
+          'src/content/controller.js',
+          'src/content/credentials.js',
+          'src/content/overlay.js',
+          'src/content/main.js'
+        ],
       });
-    } catch (e) {
-      resolve({ error: e.message });
+
+      await new Promise(r => setTimeout(r, 120));
+      const retryResp = await chrome.tabs.sendMessage(tabId, message).catch(() => ({ ok: true }));
+      return retryResp || { ok: true };
+    } catch (injectErr) {
+      return { error: injectErr.message };
     }
-  });
+  }
 }
 
 // ── Initialization ────────────────────────────────────────────────────────────
@@ -103,20 +97,39 @@ async function init() {
 }
 
 async function loadSettings() {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (resp) => {
-      void chrome.runtime.lastError;
-      currentSettings = resp?.settings ?? {
-        enabled: false,
-        scanMode: 'flat',
-        highlightColor: '#FF6B35',
-        highlightBorderWidth: 3,
-        audio: { enabled: true },
-        credentials: { enabled: true }
-      };
-      resolve();
-    });
-  });
+  try {
+    const res = await chrome.storage.sync.get('settings');
+    currentSettings = res?.settings ?? {
+      enabled: false,
+      scanMode: 'flat',
+      highlightColor: '#FF6B35',
+      highlightBorderWidth: 3,
+      audio: { enabled: true },
+      credentials: { enabled: true }
+    };
+  } catch (_) {
+    currentSettings = {
+      enabled: false,
+      scanMode: 'flat',
+      highlightColor: '#FF6B35',
+      highlightBorderWidth: 3,
+      audio: { enabled: true },
+      credentials: { enabled: true }
+    };
+  }
+}
+
+async function saveSettings(settings) {
+  try {
+    await chrome.storage.sync.set({ settings });
+    currentSettings = settings;
+    const tabs = await chrome.tabs.query({}).catch(() => []);
+    for (const tab of tabs) {
+      if (tab.id && isValidWebUrl(tab.url)) {
+        chrome.tabs.sendMessage(tab.id, { type: 'SETTINGS_UPDATED', settings }).catch(() => null);
+      }
+    }
+  } catch (_) {}
 }
 
 function renderSettings() {
@@ -135,17 +148,15 @@ async function checkActiveTabStatus() {
   }
 
   try {
-    chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }, (resp) => {
-      const err = chrome.runtime.lastError;
-      if (err || !resp) {
-        let host = 'page';
-        try { host = new URL(tab.url).hostname; } catch (_) {}
-        updateStatusUI(false, `Ready on ${escapeHtml(host)}`);
-        return;
-      }
-      isNavActive = resp.state !== 'IDLE';
-      updateStatusUI(isNavActive, isNavActive ? `Active (${resp.state})` : 'Ready — press Start');
-    });
+    const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }).catch(() => null);
+    if (!resp) {
+      let host = 'page';
+      try { host = new URL(tab.url).hostname; } catch (_) {}
+      updateStatusUI(false, `Ready on ${escapeHtml(host)}`);
+      return;
+    }
+    isNavActive = resp.state && resp.state !== 'IDLE';
+    updateStatusUI(isNavActive, isNavActive ? `Active (${resp.state})` : 'Ready — press Start');
   } catch (_) {
     updateStatusUI(false, 'Ready — press Start');
   }
@@ -170,8 +181,8 @@ function updateStatusUI(active, msg) {
 
 // ── Saved Credentials Review ──────────────────────────────────────────────────
 async function loadSavedCredentials() {
-  chrome.storage.local.get('as_cred_index', (res) => {
-    void chrome.runtime.lastError;
+  try {
+    const res = await chrome.storage.local.get('as_cred_index');
     const creds = res['as_cred_index'] || {};
     const entries = Object.entries(creds);
 
@@ -202,18 +213,16 @@ async function loadSavedCredentials() {
         showToast('Credential removed');
       });
     });
-  });
+  } catch (_) {}
 }
 
 async function deleteCredential(origin) {
-  return new Promise((resolve) => {
-    chrome.storage.local.get('as_cred_index', (res) => {
-      void chrome.runtime.lastError;
-      const creds = res['as_cred_index'] || {};
-      delete creds[origin];
-      chrome.storage.local.set({ as_cred_index: creds }, resolve);
-    });
-  });
+  try {
+    const res = await chrome.storage.local.get('as_cred_index');
+    const creds = res['as_cred_index'] || {};
+    delete creds[origin];
+    await chrome.storage.local.set({ as_cred_index: creds });
+  } catch (_) {}
 }
 
 // ── Bind Events ───────────────────────────────────────────────────────────────
@@ -250,11 +259,8 @@ function bindEvents() {
       credentials: { enabled: credCheckbox.checked }
     };
 
-    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: updated }, () => {
-      void chrome.runtime.lastError;
-      currentSettings = updated;
-      showToast('✓ Settings saved');
-    });
+    await saveSettings(updated);
+    showToast('✓ Settings saved');
   });
 
   btnReset.addEventListener('click', async () => {
@@ -267,12 +273,9 @@ function bindEvents() {
       credentials: { enabled: true }
     };
 
-    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: defaultSettings }, () => {
-      void chrome.runtime.lastError;
-      currentSettings = defaultSettings;
-      renderSettings();
-      showToast('Defaults restored');
-    });
+    await saveSettings(defaultSettings);
+    renderSettings();
+    showToast('Defaults restored');
   });
 }
 
