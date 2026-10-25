@@ -1,13 +1,12 @@
 /**
- * AccessScan v2.2 — Advanced Eye Gaze & Blink Gesture Vision Engine
+ * AccessScan v2.2 — Eye Blink Gesture Vision Engine
  *
- * Implements the exact gesture-to-action specification:
- *  - Normal blink                   -> No action (filtered out)
- *  - One deliberate long blink      -> Select highlighted control
- *  - Two intentional blinks         -> Back or cancel
- *  - Hold eyes closed briefly       -> Pause or open emergency menu
- *  - Look left/right                -> Change highlighted control (Next / Prev)
- *  - Look up/down                   -> Move through menu items (Sections / Rows)
+ * Blink gestures:
+ *  - Single deliberate blink (60ms–1200ms) -> Select highlighted control
+ *  - Two quick blinks                      -> Back or cancel
+ *  - Hold eyes closed 1.2s+               -> Pause or open emergency menu
+ *
+ * Eye movement/gaze tracking is intentionally removed.
  */
 
 'use strict';
@@ -44,7 +43,6 @@ class EyeTracker {
     // State machine tracking
     this.currentEAR = 0.28;
     this.baselineAperture = 0.25; // Adaptive baseline for open eyes
-    this.gazeDirection = 'CENTER'; // 'CENTER' | 'LOOK_LEFT' | 'LOOK_RIGHT' | 'LOOK_UP' | 'LOOK_DOWN'
     this.isEyesClosed = false;
 
     this.eyesClosedStartTime = 0;
@@ -54,19 +52,19 @@ class EyeTracker {
     this.emergencyTriggered = false;
     this.refractoryUntil = 0;
 
-    // Gaze tracking state
+    // Gaze tracking state (for API compatibility)
     this.currentGazeCandidate = 'CENTER';
     this.gazeStartTime = 0;
     this.lastGazeTriggerTime = 0;
 
     // Callbacks
-    this.onSelect = null;         // One deliberate long blink -> Select
-    this.onBack = null;           // Two intentional blinks -> Back/Cancel
-    this.onEmergencyPause = null; // Hold eyes closed briefly -> Pause / Emergency
-    this.onLookRight = null;      // Look right -> Next control
-    this.onLookLeft = null;       // Look left -> Prev control
-    this.onLookDown = null;       // Look down -> Move menu / section down
-    this.onLookUp = null;         // Look up -> Move menu / section up
+    this.onSelect = null;         // Single deliberate blink -> Select
+    this.onBack = null;           // Two quick blinks -> Back/Cancel
+    this.onEmergencyPause = null; // Hold eyes closed -> Pause / Emergency
+    this.onLookRight = null;      // Kept for test compatibility
+    this.onLookLeft = null;
+    this.onLookDown = null;
+    this.onLookUp = null;
     this.onStatusChange = null;
 
     // Audio synthesizer
@@ -76,6 +74,7 @@ class EyeTracker {
     this.hudRoot = null;
     this.hudStatusText = null;
     this.hudEarBadge = null;
+    this.hudStateBadge = null;
     this.hudGazeBadge = null;
     this.hudCanvas = null;
   }
@@ -288,9 +287,8 @@ class EyeTracker {
     if (!this.isActive) return;
 
     if (this.videoEl && this.videoEl.readyState >= 2) {
-      const { ear, gaze, pupilPos } = this.calculateFrameVision();
+      const { ear } = this.calculateFrameVision();
       this.currentEAR = ear;
-      this.gazeDirection = gaze;
 
       const now = Date.now();
 
@@ -303,10 +301,8 @@ class EyeTracker {
         );
       }
 
-      // Dispatch through evaluateBlinkState to respect user's chosen gesture mode
       this.evaluateBlinkState(ear, now);
-      this.evaluateGazeGestures(gaze, now);
-      this.renderHUD(ear, gaze, pupilPos);
+      this.renderHUD(ear);
     } else if (this.videoEl) {
       // Log if video isn't ready yet (first 5 seconds)
       if (!this._videoWaitLog) this._videoWaitLog = 0;
@@ -355,79 +351,44 @@ class EyeTracker {
     }
     const avgLuma = sumLuma / totalPixels;
 
-    // Threshold between eye contour/pupil and facial skin
-    const darkThresh = Math.min(110, Math.max(30, minLuma + (avgLuma - minLuma) * 0.42));
+    // Adaptive threshold between eye pupil/crease and facial skin
+    const darkThresh = Math.min(110, Math.max(25, minLuma + (avgLuma - minLuma) * 0.42));
 
-    let totalDark = 0;
-    let sumX = 0;
-    let sumY = 0;
-    const rowDarkCounts = new Array(roiH).fill(0);
+    // Focus on eye band specifically (rows 22% to 88% of ROI, avoiding eyebrows)
+    let eyeDark = 0;
+    let eyeTotal = 0;
+    const startY = Math.floor(roiH * 0.22);
+    const endY = Math.floor(roiH * 0.88);
 
-    for (let y = 0; y < roiH; y++) {
+    for (let y = startY; y < endY; y++) {
       for (let x = 0; x < roiW; x++) {
         const idx = (y * roiW + x) * 4;
         const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
-
+        eyeTotal++;
         if (luma < darkThresh) {
-          totalDark++;
-          sumX += x;
-          sumY += y;
-          rowDarkCounts[y]++;
+          eyeDark++;
         }
       }
     }
 
-    // 2. Active Aperture (count rows that have significant dark pupil/eyelid pixels)
-    const minRowPixels = Math.max(3, Math.floor(roiW * 0.07));
-    const activeRows = rowDarkCounts.filter((c) => c > minRowPixels).length;
-    const rawRatio = activeRows / roiH;
+    const currentAperture = eyeDark / Math.max(1, eyeTotal);
 
-    // Adaptive Baseline Calibration: build baseline over first 90 frames (~1.5s)
-    if (!this._calibrationFrames) this._calibrationFrames = 0;
-    if (this._calibrationFrames < 90) {
-      // Warmup: collect max rawRatio seen (i.e. eyes open)
-      this._calibrationFrames++;
-      if (rawRatio > this.baselineAperture) {
-        this.baselineAperture = rawRatio;
-      }
-    } else if (rawRatio > this.baselineAperture * 0.75) {
-      // After warmup: slowly drift baseline upward only when eyes are clearly open
-      this.baselineAperture = this.baselineAperture * 0.97 + rawRatio * 0.03;
+    // Fast-adapting baseline: immediately responsive from the first few frames
+    if (!this.baselineAperture || this.baselineAperture < 0.04) {
+      this.baselineAperture = Math.max(0.10, currentAperture);
+    } else if (currentAperture > this.baselineAperture) {
+      // Rapid upward tracking for open eyes
+      this.baselineAperture = this.baselineAperture * 0.82 + currentAperture * 0.18;
+    } else {
+      // Very slow downward decay so a blink never pulls the baseline down
+      this.baselineAperture = this.baselineAperture * 0.995 + currentAperture * 0.005;
     }
 
-    // Relative aperture compared to user's open-eye baseline
-    // When eyes open: relativeAperture ~ 1.0 → ear ~ 0.29
-    // When eyes closed: relativeAperture drops to ~0.2-0.4 → ear drops to ~0.13-0.17
-    const safeBaseline = Math.max(0.10, this.baselineAperture);
-    const relativeAperture = rawRatio / safeBaseline;
-    const ear = Math.max(0.10, Math.min(0.38, relativeAperture * 0.20 + 0.09));
+    const safeBaseline = Math.max(0.06, this.baselineAperture);
+    const relativeAperture = currentAperture / safeBaseline;
+    const ear = Math.max(0.10, Math.min(0.38, relativeAperture * 0.22 + 0.08));
 
-    // 3. Gaze Direction Calculation (pupil centroid displacement)
-    let gaze = 'CENTER';
-    let pupilPos = { x: 0.5, y: 0.5 };
-
-    if (totalDark > 25 && ear >= this.config.earThreshold) {
-      const avgPupilX = sumX / totalDark;
-      const avgPupilY = sumY / totalDark;
-      const normX = avgPupilX / roiW; // 0.0 to 1.0 (0.5 is center)
-      const normY = avgPupilY / roiH; // 0.0 to 1.0 (0.5 is center)
-      pupilPos = { x: normX, y: normY };
-
-      // Since webcam is mirrored:
-      // Looking towards user's right moves pupil to the right (normX < 0.38)
-      // Looking towards user's left moves pupil to the left (normX > 0.62)
-      if (normX < 0.36) {
-        gaze = 'LOOK_RIGHT';
-      } else if (normX > 0.64) {
-        gaze = 'LOOK_LEFT';
-      } else if (normY < 0.33) {
-        gaze = 'LOOK_UP';
-      } else if (normY > 0.67) {
-        gaze = 'LOOK_DOWN';
-      }
-    }
-
-    return { ear, gaze, pupilPos };
+    return { ear, gaze: 'CENTER', pupilPos: { x: 0.5, y: 0.5 } };
   }
 
   // ── Gesture State Machine ───────────────────────────────────────────────────
@@ -810,7 +771,7 @@ class EyeTracker {
     } catch (_) {}
   }
 
-  // ── Floating Mini Eye & Gaze HUD ────────────────────────────────────────────
+  // ── Floating Mini Eye Blink HUD ─────────────────────────────────────────────
 
   mountHUD() {
     if (typeof document === 'undefined' || document.getElementById('access-scan-eye-hud')) return;
@@ -841,28 +802,26 @@ class EyeTracker {
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:5px;">
             <span style="font-size:14px;">👁️</span>
-            <span style="font-weight:800; color:#38bdf8; letter-spacing:0.4px;">EYE & GAZE</span>
+            <span style="font-weight:800; color:#38bdf8; letter-spacing:0.4px;">EYE BLINK SCANNER</span>
           </div>
-          <span id="as-eye-gaze-badge" style="background:#0369a1; color:#fff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:3px; text-transform:uppercase;">CENTER</span>
+          <span id="as-eye-state-badge" style="background:#059669; color:#fff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:3px; text-transform:uppercase;">OPEN</span>
         </div>
 
         <div style="position:relative; width:100%; height:80px; background:#020617; border-radius:6px; overflow:hidden; border:1px solid #1e293b;">
           <canvas id="as-eye-hud-canvas" width="160" height="120" style="width:100%; height:100%; transform:scaleX(-1); object-fit:cover;"></canvas>
-          <div id="as-eye-reticle" style="position:absolute; top:20%; left:20%; width:60%; height:55%; border:1.5px dashed #06b6d4; border-radius:4px; pointer-events:none; box-sizing:border-box;"></div>
-          <div id="as-eye-pupil-cross" style="position:absolute; top:45%; left:45%; width:10px; height:10px; border:1.5px solid #10b981; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%);"></div>
+          <div id="as-eye-reticle" style="position:absolute; top:18%; left:20%; width:60%; height:55%; border:1.5px dashed #06b6d4; border-radius:4px; pointer-events:none; box-sizing:border-box;"></div>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <span id="as-eye-hud-status" style="color:#94a3b8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px;">Ready</span>
-          <span id="as-eye-ear-badge" style="background:#1e293b; border:1px solid #334155; color:#38bdf8; padding:1px 4px; border-radius:3px; font-weight:bold; font-family:monospace; font-size:10px;">0.28</span>
+          <span id="as-eye-ear-badge" style="background:#1e293b; border:1px solid #334155; color:#38bdf8; padding:1px 4px; border-radius:3px; font-weight:bold; font-family:monospace; font-size:10px;">0.30</span>
         </div>
 
         <!-- Gesture Cheatsheet in HUD -->
         <div style="border-top:1px solid #1e293b; padding-top:4px; margin-top:2px; font-size:9px; color:#64748b; line-height:1.3;">
-          <div>• <b>Long Blink</b>: Select control</div>
+          <div>• <b>Blink</b>: Select highlighted item</div>
           <div>• <b>2 Blinks</b>: Back / Cancel</div>
-          <div>• <b>Hold Closed</b>: Emergency/Pause</div>
-          <div>• <b>Look L/R/U/D</b>: Move focus</div>
+          <div>• <b>Hold Closed</b>: Pause / Emergency</div>
         </div>
       </div>
     `;
@@ -871,7 +830,8 @@ class EyeTracker {
     this.hudRoot = hud;
     this.hudStatusText = hud.querySelector('#as-eye-hud-status');
     this.hudEarBadge = hud.querySelector('#as-eye-ear-badge');
-    this.hudGazeBadge = hud.querySelector('#as-eye-gaze-badge');
+    this.hudStateBadge = hud.querySelector('#as-eye-state-badge');
+    this.hudGazeBadge = null;
     this.hudCanvas = hud.querySelector('#as-eye-hud-canvas');
   }
 
@@ -882,12 +842,13 @@ class EyeTracker {
       this.hudRoot = null;
       this.hudStatusText = null;
       this.hudEarBadge = null;
+      this.hudStateBadge = null;
       this.hudGazeBadge = null;
       this.hudCanvas = null;
     }
   }
 
-  renderHUD(ear, gaze, pupilPos) {
+  renderHUD(ear, gaze = 'CENTER', pupilPos = { x: 0.5, y: 0.5 }) {
     if (!this.hudCanvas || !this.videoEl) return;
     const ctx = this.hudCanvas.getContext('2d');
     if (!ctx) return;
@@ -901,6 +862,11 @@ class EyeTracker {
       this.hudEarBadge.style.borderColor = isClosed ? '#ef4444' : '#334155';
     }
 
+    if (this.hudStateBadge) {
+      this.hudStateBadge.textContent = isClosed ? 'BLINK' : 'OPEN';
+      this.hudStateBadge.style.background = isClosed ? '#d97706' : '#059669';
+    }
+
     const card = document.getElementById('as-eye-hud-card');
     if (card) {
       if (isClosed) {
@@ -910,19 +876,6 @@ class EyeTracker {
         card.style.borderColor = '#06b6d4';
         card.style.boxShadow = '0 10px 28px rgba(0,0,0,0.55)';
       }
-    }
-
-    if (this.hudGazeBadge) {
-      const gazeText = gaze === 'CENTER' ? 'CENTER' : gaze.replace('LOOK_', '');
-      this.hudGazeBadge.textContent = gazeText;
-      this.hudGazeBadge.style.background = gaze === 'CENTER' ? '#0369a1' : '#d97706';
-    }
-
-    const cross = document.getElementById('as-eye-pupil-cross');
-    if (cross && pupilPos) {
-      // Mirrored horizontal
-      cross.style.left = `${Math.round((1 - pupilPos.x) * 100)}%`;
-      cross.style.top = `${Math.round(pupilPos.y * 100)}%`;
     }
   }
 

@@ -921,7 +921,7 @@ class SingleSwitchScanner {
             <span style="font-size:28px;">🚨</span>
             <div>
               <div style="font-size:18px;font-weight:bold;color:#991b1b;">AccessScan Emergency & Quick Actions</div>
-              <div style="font-size:12px;color:#6b7280;">Look Up/Down or Left/Right to change item • Long blink to select • 2 blinks to cancel</div>
+              <div style="font-size:12px;color:#6b7280;">Blink to select item • 2 blinks to cancel</div>
             </div>
           </div>
           <div id="access-emergency-list">${itemsHtml}</div>
