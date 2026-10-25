@@ -1,8 +1,0 @@
-node_modules/
-.playwright/
-test-results/
-playwright-report/
-*.zip
-.DS_Store
-Thumbs.db
-*.log

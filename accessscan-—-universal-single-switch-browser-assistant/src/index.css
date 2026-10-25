@@ -1,0 +1,72 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --canvas: #FAFAF8;
+    --surface-1: #F4F3EE;
+    --surface-2: #EBE8DF;
+    --surface-3: #E5E2D8;
+    --border: #D6D1C4;
+    --ink-primary: #1C1917;
+    --ink-secondary: #292524;
+    --ink-muted: #57534E;
+    --accent-amber: #B45309;
+    --accent-amber-light: #D97706;
+    --accent-indigo: #4338CA;
+    --status-success: #15803D;
+    --status-error: #B91C1C;
+  }
+
+  body {
+    font-family: 'Atkinson Hyperlegible', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #FAFAF8;
+    color: #1C1917;
+    margin: 0;
+    padding: 0;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+/* Accessible Scan Ring Utility (Design System Specs) */
+.scan-focus-control {
+  position: relative;
+  box-shadow: 0 0 0 2.5px #FAFAF8, 0 0 0 6px #B45309 !important;
+  outline: none !important;
+  z-index: 40;
+  transition: box-shadow 0.12s ease-in-out;
+}
+
+.scan-focus-section {
+  position: relative;
+  box-shadow: 0 0 0 3px #FAFAF8, 0 0 0 6px #4338CA !important;
+  outline: none !important;
+  z-index: 30;
+  transition: box-shadow 0.15s ease-in-out;
+}
+
+.scan-pulse-badge {
+  animation: scanPulse 1.2s infinite ease-in-out;
+}
+
+@keyframes scanPulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.9; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Custom scrollbar for clean assistive UI */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F4F3EE;
+}
+::-webkit-scrollbar-thumb {
+  background: #D6D1C4;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #78716C;
+}

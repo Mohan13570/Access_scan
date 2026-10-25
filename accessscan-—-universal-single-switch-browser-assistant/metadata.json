@@ -1,0 +1,6 @@
+{
+  "name": "AccessScan — Universal Single-Switch Browser Assistant",
+  "description": "Chrome extension and universal assistive web layer enabling people with severe motor impairments to navigate any website using a single switch, hierarchical scanning, and on-screen keyboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
