@@ -327,6 +327,14 @@
   z-index: 2147483640 !important;
 }
 
+.access-scan-selection-pulse {
+  outline: 4px solid #10b981 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 6px #ffffff, 0 0 0 10px #10b981, 0 0 32px rgba(16, 185, 129, 0.95) !important;
+  transition: all 0.15s ease-out !important;
+  transform: scale(1.02) !important;
+}
+
 .access-scan-active-section {
   outline: 3px dashed #b45309 !important;
   outline-offset: 4px !important;

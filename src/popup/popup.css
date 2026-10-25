@@ -654,3 +654,146 @@ footer p {
   margin-top: 4px;
   font-weight: 600;
 }
+
+/* ── Eye-Blink Scanner Controls & Calibration ──────────────────────────────── */
+.mode-banner-eye {
+  background: rgba(6, 182, 212, 0.14);
+  border: 1.5px solid #06b6d4;
+}
+
+.mode-banner-eye #banner-mode-title {
+  color: #38bdf8;
+}
+
+.eye-status-card {
+  background: #020617;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.eye-status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ear-badge {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: #0f172a;
+  border: 1px solid #334155;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.setting-subgroup {
+  margin-bottom: 12px;
+}
+
+.group-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.gesture-pill-group {
+  display: flex;
+  gap: 6px;
+}
+
+.gesture-btn {
+  flex: 1;
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 4px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: all 0.12s ease;
+}
+
+.gesture-btn:hover {
+  border-color: #06b6d4;
+}
+
+.gesture-btn.active {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: #06b6d4;
+}
+
+.gesture-btn .g-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.gesture-btn.active .g-title {
+  color: #38bdf8;
+}
+
+.gesture-btn .g-sub {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+#ear-threshold-slider, #eye-scan-speed-slider {
+  width: 100%;
+  margin: 6px 0 8px;
+  accent-color: #06b6d4;
+  cursor: pointer;
+}
+
+#ear-threshold-badge, #eye-speed-val-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: rgba(6, 182, 212, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ear-preset-btn, .eye-preset-btn {
+  flex: 1;
+  padding: 5px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.ear-preset-btn:hover, .eye-preset-btn:hover {
+  border-color: #06b6d4;
+  color: var(--text);
+}
+
+.ear-preset-btn.active, .eye-preset-btn.active {
+  background: #0284c7;
+  color: #fff;
+  border-color: #0284c7;
+}
+
+.btn-camera-toggle {
+  background: #0f172a;
+  border: 1px solid #0284c7;
+  color: #38bdf8;
+}
+
+.btn-camera-toggle:hover {
+  background: #0284c7;
+  color: #fff;
+}

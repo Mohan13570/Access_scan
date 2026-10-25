@@ -11,7 +11,7 @@
 
 const DEFAULT_SETTINGS = {
   enabled: true, // Automatically active across supported websites
-  inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch)
+  inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch) | 'eye' (Eye Blink Scanner)
   scanSpeed: 1500, // Interval in ms for 1-key single switch auto-scan
   speechEnabled: true, // Voice synthesis readout
   scanMode: 'flat', // 'flat' | 'hierarchical'
@@ -22,6 +22,12 @@ const DEFAULT_SETTINGS = {
   },
   credentials: {
     enabled: true,
+  },
+  eyeTracking: {
+    enabled: false,
+    gestureMode: 'single-blink', // 'single-blink' | 'double-blink' | 'long-blink'
+    earThreshold: 0.22,
+    showMiniPreview: true,
   },
 };
 
@@ -115,7 +121,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message.action === 'SET_SPEED' ||
     message.type === 'SET_SPEED' ||
     message.action === 'GET_STATUS' ||
-    message.type === 'GET_STATUS'
+    message.type === 'GET_STATUS' ||
+    message.type === 'START_EYE_TRACKER' ||
+    message.type === 'STOP_EYE_TRACKER' ||
+    message.type === 'SET_BLINK_CONFIG'
   ) {
     (async () => {
       try {
@@ -141,6 +150,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   'src/content/highlighter.js',
                   'src/content/hierarchy.js',
                   'src/content/controller.js',
+                  'src/content/eye-tracker.js',
                   'src/content/single-switch.js',
                   'src/content/credentials.js',
                   'src/content/overlay.js',

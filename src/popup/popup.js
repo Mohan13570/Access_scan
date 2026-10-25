@@ -18,8 +18,10 @@ const statusMessage       = document.getElementById('status-message');
 // Mode Switcher Elements
 const modeBtn4Key         = document.getElementById('mode-btn-4key');
 const modeBtn1Key         = document.getElementById('mode-btn-1key');
+const modeBtnEye          = document.getElementById('mode-btn-eye');
 const keyGuide4Key        = document.getElementById('key-guide-4key');
 const keyGuide1Key        = document.getElementById('key-guide-1key');
+const keyGuideEye         = document.getElementById('key-guide-eye');
 const singleSwitchSettings= document.getElementById('single-switch-settings');
 
 // 1-Key Controls
@@ -29,6 +31,19 @@ const presetBtns          = document.querySelectorAll('.preset-btn');
 const speechCheckbox      = document.getElementById('speech-enabled');
 const btnTriggerSwitch    = document.getElementById('btn-trigger-switch');
 const btnToggleScan       = document.getElementById('btn-toggle-scan');
+
+// Eye Scanner Controls
+const earThresholdSlider  = document.getElementById('ear-threshold-slider');
+const earThresholdBadge   = document.getElementById('ear-threshold-badge');
+const earPresetBtns       = document.querySelectorAll('.ear-preset-btn');
+const gestureBtns         = document.querySelectorAll('.gesture-btn');
+const btnToggleCamera     = document.getElementById('btn-toggle-camera');
+const btnTestBlink        = document.getElementById('btn-test-blink');
+const eyeScanSpeedSlider  = document.getElementById('eye-scan-speed-slider');
+const eyeSpeedValBadge    = document.getElementById('eye-speed-val-badge');
+const eyePresetBtns       = document.querySelectorAll('.eye-preset-btn');
+const eyeStatusReadout    = document.getElementById('eye-status-readout');
+const eyeEarReadout       = document.getElementById('eye-ear-readout');
 
 // Shared / 4-Key Settings
 const scanModeSelect      = document.getElementById('scan-mode');
@@ -87,6 +102,7 @@ async function sendTabMessageWithFallback(tabId, message) {
           'src/content/highlighter.js',
           'src/content/hierarchy.js',
           'src/content/controller.js',
+          'src/content/eye-tracker.js',
           'src/content/single-switch.js',
           'src/content/credentials.js',
           'src/content/overlay.js',
@@ -119,12 +135,13 @@ async function loadSettings() {
     const res = await chrome.storage.sync.get('settings');
     if (res?.settings) {
       currentSettings = { ...defaults, ...res.settings };
-      if (currentSettings.inputMode !== '1key' && currentSettings.inputMode !== '4key') {
+      if (currentSettings.inputMode !== '1key' && currentSettings.inputMode !== '4key' && currentSettings.inputMode !== 'eye') {
         currentSettings.inputMode = '4key';
       }
       if (typeof currentSettings.scanSpeed !== 'number' || isNaN(currentSettings.scanSpeed)) {
         currentSettings.scanSpeed = 1500;
       }
+      currentSettings.eyeTracking = { ...defaults.eyeTracking, ...(currentSettings.eyeTracking || {}) };
     } else {
       currentSettings = defaults;
     }
@@ -136,7 +153,7 @@ async function loadSettings() {
 function getDefaultSettings() {
   return {
     enabled: true,
-    inputMode: '4key',
+    inputMode: '4key', // '4key' | '1key' | 'eye'
     scanSpeed: 1500,
     speechEnabled: true,
     scanMode: 'flat',
@@ -144,6 +161,12 @@ function getDefaultSettings() {
     highlightBorderWidth: 3,
     audio: { enabled: true },
     credentials: { enabled: true },
+    eyeTracking: {
+      enabled: false,
+      gestureMode: 'single-blink', // 'single-blink' | 'double-blink' | 'long-blink'
+      earThreshold: 0.22,
+      showMiniPreview: true,
+    },
   };
 }
 
@@ -167,7 +190,20 @@ function renderSettings() {
   const speed = currentSettings.scanSpeed || 1500;
   scanSpeedSlider.value = speed;
   speedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
+  if (eyeScanSpeedSlider) eyeScanSpeedSlider.value = speed;
+  if (eyeSpeedValBadge) eyeSpeedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
   updatePresetBtns(speed);
+
+  // Eye tracking values
+  const eyeConf = currentSettings.eyeTracking || {};
+  if (earThresholdSlider) {
+    earThresholdSlider.value = String(eyeConf.earThreshold ?? 0.22);
+  }
+  if (earThresholdBadge) {
+    earThresholdBadge.textContent = (eyeConf.earThreshold ?? 0.22).toFixed(2);
+  }
+  updateEarPresetBtns(eyeConf.earThreshold ?? 0.22);
+  updateGestureBtns(eyeConf.gestureMode || 'single-blink');
 
   speechCheckbox.checked = currentSettings.speechEnabled !== false;
 
@@ -180,14 +216,23 @@ function renderSettings() {
 
 function updateModeUI(mode) {
   const is1Key = mode === '1key';
+  const isEye = mode === 'eye';
+  const is4Key = !is1Key && !isEye;
+
   modeBtn1Key.classList.toggle('active', is1Key);
   modeBtn1Key.setAttribute('aria-checked', String(is1Key));
 
-  modeBtn4Key.classList.toggle('active', !is1Key);
-  modeBtn4Key.setAttribute('aria-checked', String(!is1Key));
+  if (modeBtnEye) {
+    modeBtnEye.classList.toggle('active', isEye);
+    modeBtnEye.setAttribute('aria-checked', String(isEye));
+  }
+
+  modeBtn4Key.classList.toggle('active', is4Key);
+  modeBtn4Key.setAttribute('aria-checked', String(is4Key));
 
   keyGuide1Key.style.display = is1Key ? 'block' : 'none';
-  keyGuide4Key.style.display = is1Key ? 'none' : 'block';
+  if (keyGuideEye) keyGuideEye.style.display = isEye ? 'block' : 'none';
+  keyGuide4Key.style.display = is4Key ? 'block' : 'none';
 
   singleSwitchSettings.style.display = is1Key ? 'block' : 'none';
 
@@ -197,11 +242,17 @@ function updateModeUI(mode) {
   const bannerDesc = document.getElementById('banner-mode-desc');
   const bannerIcon = document.getElementById('banner-mode-icon');
   if (banner && bannerTitle && bannerDesc && bannerIcon) {
-    if (is1Key) {
+    const speedSec = ((currentSettings.scanSpeed || 1500) / 1000).toFixed(1);
+    if (isEye) {
+      banner.className = 'mode-banner mode-banner-eye';
+      bannerIcon.textContent = '👁️';
+      const gestureName = (currentSettings.eyeTracking?.gestureMode || 'single-blink').replace('-blink', ' blink').toUpperCase();
+      bannerTitle.textContent = `ACTIVE: EYE BLINK TO SELECT (${gestureName})`;
+      bannerDesc.textContent = `Auto-scans page elements. Simply blink your eyes to select the highlighted item! Speed: ${speedSec}s.`;
+    } else if (is1Key) {
       banner.className = 'mode-banner mode-banner-1key';
       bannerIcon.textContent = '🔘';
       bannerTitle.textContent = 'ACTIVE MODE: 1-KEY SINGLE-SWITCH (SPACEBAR)';
-      const speedSec = ((currentSettings.scanSpeed || 1500) / 1000).toFixed(1);
       bannerDesc.textContent = `Auto-scans page elements. Press Spacebar to select/type. Saved speed: ${speedSec}s across all websites.`;
     } else {
       banner.className = 'mode-banner mode-banner-4key';
@@ -218,6 +269,24 @@ function updatePresetBtns(speed) {
   presetBtns.forEach((btn) => {
     const btnSpeed = parseInt(btn.getAttribute('data-speed'), 10);
     btn.classList.toggle('active', Math.abs(btnSpeed - speed) < 100);
+  });
+  eyePresetBtns.forEach((btn) => {
+    const btnSpeed = parseInt(btn.getAttribute('data-speed'), 10);
+    btn.classList.toggle('active', Math.abs(btnSpeed - speed) < 100);
+  });
+}
+
+function updateEarPresetBtns(val) {
+  earPresetBtns.forEach((btn) => {
+    const ear = parseFloat(btn.getAttribute('data-ear'));
+    btn.classList.toggle('active', Math.abs(ear - val) < 0.02);
+  });
+}
+
+function updateGestureBtns(gesture) {
+  gestureBtns.forEach((btn) => {
+    const g = btn.getAttribute('data-gesture');
+    btn.classList.toggle('active', g === gesture);
   });
 }
 
@@ -335,6 +404,156 @@ function bindEvents() {
     updateModeUI('1key');
     await saveSettings(currentSettings);
     showToast('Switched to 1-Key Single Switch');
+  });
+
+  modeBtnEye?.addEventListener('click', async () => {
+    currentSettings.inputMode = 'eye';
+    currentSettings.eyeTracking = currentSettings.eyeTracking || {};
+    currentSettings.eyeTracking.enabled = true;
+    updateModeUI('eye');
+    await saveSettings(currentSettings);
+    showToast('Switched to Eye-Blink Scanner');
+  });
+
+  // Eye Scanner Gesture Buttons (Single-Blink vs Double-Blink vs Dwell)
+  gestureBtns.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const gesture = btn.getAttribute('data-gesture');
+      currentSettings.eyeTracking = currentSettings.eyeTracking || {};
+      currentSettings.eyeTracking.gestureMode = gesture;
+      updateGestureBtns(gesture);
+      updateModeUI(currentSettings.inputMode);
+      await saveSettings(currentSettings);
+
+      const tab = await getTargetTab();
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, {
+          type: 'SET_BLINK_CONFIG',
+          config: { gestureMode: gesture },
+        });
+      }
+      showToast(`Blink trigger mode: ${gesture}`);
+    });
+  });
+
+  // Eye Sensitivity Slider (EAR Threshold)
+  let earDebounceTimer = null;
+  earThresholdSlider?.addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    earThresholdBadge.textContent = val.toFixed(2);
+    currentSettings.eyeTracking = currentSettings.eyeTracking || {};
+    currentSettings.eyeTracking.earThreshold = val;
+    updateEarPresetBtns(val);
+
+    clearTimeout(earDebounceTimer);
+    earDebounceTimer = setTimeout(async () => {
+      await saveSettings(currentSettings);
+    }, 250);
+
+    getTargetTab().then((tab) => {
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, {
+          type: 'SET_BLINK_CONFIG',
+          config: { earThreshold: val },
+        });
+      }
+    });
+  });
+
+  earThresholdSlider?.addEventListener('change', async (e) => {
+    clearTimeout(earDebounceTimer);
+    const val = parseFloat(e.target.value);
+    currentSettings.eyeTracking = currentSettings.eyeTracking || {};
+    currentSettings.eyeTracking.earThreshold = val;
+    await saveSettings(currentSettings);
+    showToast(`Sensitivity threshold saved: ${val.toFixed(2)}`);
+  });
+
+  // EAR Presets
+  earPresetBtns.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ear = parseFloat(btn.getAttribute('data-ear'));
+      earThresholdSlider.value = String(ear);
+      earThresholdBadge.textContent = ear.toFixed(2);
+      currentSettings.eyeTracking = currentSettings.eyeTracking || {};
+      currentSettings.eyeTracking.earThreshold = ear;
+      updateEarPresetBtns(ear);
+      await saveSettings(currentSettings);
+
+      const tab = await getTargetTab();
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, {
+          type: 'SET_BLINK_CONFIG',
+          config: { earThreshold: ear },
+        });
+      }
+      showToast(`Sensitivity set to ${ear.toFixed(2)}`);
+    });
+  });
+
+  // Toggle Camera
+  let isCameraOn = true;
+  btnToggleCamera?.addEventListener('click', async () => {
+    isCameraOn = !isCameraOn;
+    btnToggleCamera.textContent = isCameraOn ? '📷 Stop Camera' : '📷 Start Camera';
+    const tab = await getTargetTab();
+    if (tab?.id) {
+      sendTabMessageWithFallback(tab.id, {
+        type: isCameraOn ? 'START_EYE_TRACKER' : 'STOP_EYE_TRACKER',
+        options: { gestureMode: currentSettings.eyeTracking?.gestureMode, earThreshold: currentSettings.eyeTracking?.earThreshold },
+      });
+      showToast(isCameraOn ? 'Camera started' : 'Camera stopped');
+    }
+  });
+
+  // Test Blink trigger button
+  btnTestBlink?.addEventListener('click', async () => {
+    const tab = await getTargetTab();
+    if (tab?.id) {
+      await sendTabMessageWithFallback(tab.id, { type: 'TRIGGER_SWITCH' });
+      showToast('⚡ Blink Trigger Simulated');
+    }
+  });
+
+  // Eye embedded scan speed slider
+  eyeScanSpeedSlider?.addEventListener('input', (e) => {
+    const speed = parseInt(e.target.value, 10);
+    scanSpeedSlider.value = speed;
+    speedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
+    eyeSpeedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
+    currentSettings.scanSpeed = speed;
+    updatePresetBtns(speed);
+
+    clearTimeout(speedDebounceTimer);
+    speedDebounceTimer = setTimeout(async () => {
+      await saveSettings(currentSettings);
+    }, 250);
+
+    getTargetTab().then((tab) => {
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, { type: 'SET_SPEED', interval: speed });
+      }
+    });
+  });
+
+  eyePresetBtns.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      clearTimeout(speedDebounceTimer);
+      const speed = parseInt(btn.getAttribute('data-speed'), 10);
+      scanSpeedSlider.value = speed;
+      eyeScanSpeedSlider.value = speed;
+      speedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
+      eyeSpeedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
+      currentSettings.scanSpeed = speed;
+      updatePresetBtns(speed);
+      await saveSettings(currentSettings);
+
+      const tab = await getTargetTab();
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, { type: 'SET_SPEED', interval: speed });
+      }
+      showToast(`✓ Speed saved: ${(speed / 1000).toFixed(1)}s (all websites)`);
+    });
   });
 
   // Speed slider (instant live feedback + debounced persistent storage)

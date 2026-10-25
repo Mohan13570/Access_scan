@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "AccessScan — Universal Accessibility Assistant (1-Key & 4-Key)",
+  "name": "AccessScan — Universal Accessibility Assistant (4-Key, 1-Key & Eye-Blink)",
   "short_name": "AccessScan",
-  "version": "2.1.0",
-  "description": "Universal accessible browser navigation for people with severe motor impairments. Seamlessly switch between Single-Switch (1-Key) auto-scanning and Four-Key arrow navigation.",
+  "version": "2.2.0",
+  "description": "Universal accessible browser navigation for people with severe motor impairments. Supports Four-Key arrow navigation, Single-Switch spacebar scanning, and Webcam Eye-Blink to Select.",
   "permissions": [
     "activeTab",
     "storage",
@@ -24,6 +24,7 @@
         "src/content/highlighter.js",
         "src/content/hierarchy.js",
         "src/content/controller.js",
+        "src/content/eye-tracker.js",
         "src/content/single-switch.js",
         "src/content/credentials.js",
         "src/content/overlay.js",
