@@ -3,139 +3,113 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AccessScan Settings</title>
+  <title>AccessScan</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <div id="popup-root">
 
-    <!-- Header -->
+    <!-- Brand header -->
     <header>
-      <div id="logo">
-        <span id="logo-icon" aria-hidden="true">♿</span>
+      <div id="brand">
+        <span id="brand-icon">♿</span>
         <div>
           <h1>AccessScan</h1>
-          <p id="tagline">Universal Single-Switch Navigator</p>
+          <p id="brand-sub">Four-Key Accessibility Navigator</p>
         </div>
+        <span id="version-badge">v2.0</span>
       </div>
     </header>
 
-    <!-- Toggle -->
-    <section id="main-toggle-section">
-      <div id="status-row">
-        <span id="status-label">Scanner</span>
-        <label class="toggle-switch" aria-label="Enable or disable AccessScan">
-          <input type="checkbox" id="toggle-enabled" />
-          <span class="slider"></span>
-        </label>
-        <span id="status-text">Off</span>
-      </div>
-    </section>
-
-    <hr />
-
-    <!-- Scan Settings -->
-    <section aria-labelledby="scan-heading">
-      <h2 id="scan-heading">Scan Settings</h2>
-
-      <label for="scan-mode">Mode</label>
-      <select id="scan-mode" aria-describedby="scan-mode-desc">
-        <option value="flat">Flat — scan all elements sequentially</option>
-        <option value="hierarchical">Hierarchical — scan sections first</option>
-      </select>
-      <p id="scan-mode-desc" class="hint">
-        Hierarchical is faster on complex pages.
-      </p>
-
-      <label for="scan-interval">Scan speed: <strong id="interval-display">1500</strong> ms</label>
-      <input
-        type="range"
-        id="scan-interval"
-        min="400"
-        max="5000"
-        step="100"
-        value="1500"
-        aria-valuemin="400"
-        aria-valuemax="5000"
-        aria-valuenow="1500"
-        aria-label="Scan interval in milliseconds"
-      />
-      <div class="range-labels"><span>Fast (0.4s)</span><span>Slow (5s)</span></div>
-    </section>
-
-    <hr />
-
-    <!-- Switch Key -->
-    <section aria-labelledby="key-heading">
-      <h2 id="key-heading">Switch Key</h2>
-
-      <label for="switch-key">Activation key</label>
-      <div id="key-capture-row">
-        <input
-          type="text"
-          id="switch-key"
-          value="Space"
-          readonly
-          aria-label="Press to set activation key"
-          placeholder="Press any key…"
-        />
-        <button id="btn-capture-key" aria-label="Click then press a key to set the switch key">
-          Change
+    <!-- Big toggle -->
+    <section id="toggle-section">
+      <div id="toggle-row">
+        <div id="toggle-info">
+          <span id="toggle-label">Accessibility Mode</span>
+          <span id="toggle-state">Inactive</span>
+        </div>
+        <button id="btn-main-toggle" aria-label="Start or stop AccessScan" class="big-toggle">
+          <span id="btn-toggle-text">▶ Start</span>
         </button>
       </div>
-      <p class="hint">Press the physical switch key or Space bar.</p>
-
-      <label for="pause-key">Pause / Resume key</label>
-      <select id="pause-key" aria-label="Select pause key">
-        <option value="Escape">Escape</option>
-        <option value="F1">F1</option>
-        <option value="F2">F2</option>
-        <option value="Pause">Pause/Break</option>
-      </select>
-    </section>
-
-    <hr />
-
-    <!-- Visual -->
-    <section aria-labelledby="visual-heading">
-      <h2 id="visual-heading">Visual Highlight</h2>
-      <div id="color-row">
-        <label for="highlight-color">Colour</label>
-        <input type="color" id="highlight-color" value="#FF6B35" aria-label="Highlight colour" />
-        <label for="border-width">Border</label>
-        <select id="border-width" aria-label="Border width">
-          <option value="2">Thin (2px)</option>
-          <option value="3" selected>Medium (3px)</option>
-          <option value="5">Thick (5px)</option>
-        </select>
+      <div id="status-bar">
+        <span id="status-indicator"></span>
+        <span id="status-message">Ready — open any webpage and click Start</span>
       </div>
     </section>
 
+    <!-- Key guide -->
+    <section id="key-guide" aria-labelledby="key-guide-heading">
+      <h2 id="key-guide-heading">Key Controls</h2>
+      <div id="key-grid">
+        <div class="key-row">
+          <kbd>▶</kbd><span>Next element</span>
+          <kbd>◀</kbd><span>Previous element</span>
+        </div>
+        <div class="key-row">
+          <kbd>▼</kbd><span>Activate / Enter</span>
+          <kbd>▲</kbd><span>Back / Stop</span>
+        </div>
+      </div>
+      <p class="key-note">No mouse, Enter, or Space required.</p>
+    </section>
+
     <hr />
 
-    <!-- Audio -->
-    <section aria-labelledby="audio-heading">
-      <h2 id="audio-heading">Audio Feedback</h2>
+    <!-- Settings -->
+    <section id="settings-section" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Settings</h2>
+
+      <label for="scan-mode">Navigation mode</label>
+      <select id="scan-mode">
+        <option value="flat">Flat — all elements in order</option>
+        <option value="hierarchical">Hierarchical — sections first</option>
+      </select>
+
+      <label for="highlight-color">Highlight colour</label>
+      <div class="color-row">
+        <input type="color" id="highlight-color" value="#FF6B35" />
+        <select id="border-width">
+          <option value="2">Thin border</option>
+          <option value="3" selected>Medium border</option>
+          <option value="5">Thick border</option>
+        </select>
+      </div>
+
       <label class="checkbox-label">
         <input type="checkbox" id="audio-enabled" checked />
-        Enable audio cues
+        Audio feedback
       </label>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="cred-enabled" checked />
+        Save login usernames (secure)
+      </label>
+    </section>
+
+    <hr />
+
+    <!-- Saved logins -->
+    <section id="cred-section" aria-labelledby="cred-heading">
+      <h2 id="cred-heading">Saved Logins</h2>
+      <div id="cred-list">
+        <p id="cred-empty" class="muted">No saved logins yet.</p>
+      </div>
     </section>
 
     <hr />
 
     <!-- Actions -->
     <section id="actions">
-      <button id="btn-save" class="btn-primary">💾 Save Settings</button>
-      <button id="btn-reset" class="btn-secondary">↺ Reset Defaults</button>
+      <button id="btn-save" class="btn-primary">Save Settings</button>
+      <button id="btn-reset" class="btn-ghost">Reset</button>
     </section>
 
     <footer>
-      <p>v1.0.0 &nbsp;·&nbsp; Hackathon Edition &nbsp;·&nbsp; Accessibility Track ♿</p>
+      <p>Hands-off Accessibility Track ♿ · MIT License</p>
     </footer>
 
   </div>
-
   <script src="popup.js"></script>
 </body>
 </html>

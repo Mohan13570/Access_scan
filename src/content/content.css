@@ -1,54 +1,245 @@
 /* ────────────────────────────────────────────────────────────────────────────
-   AccessScan — Content Script Styles
-   Injected into every page alongside the content scripts.
-   Uses high z-index and !important sparingly to avoid conflicts.
+   AccessScan v2.0 — Content Script Styles
    ──────────────────────────────────────────────────────────────────────────── */
 
-/* Keyframe animation for the scanning highlight pulse */
+/* ── Highlight ring animations ────────────────────────────────────────────── */
 @keyframes accessscan-pulse {
-  0%   { box-shadow: 0 0 0 2px rgba(0,0,0,0.3), 0 0 8px var(--as-color, #FF6B35); }
-  50%  { box-shadow: 0 0 0 4px rgba(0,0,0,0.2), 0 0 20px var(--as-color, #FF6B35); }
-  100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.3), 0 0 8px var(--as-color, #FF6B35); }
+  0%, 100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 10px var(--as-col, #FF6B35); }
+  50%      { box-shadow: 0 0 0 4px rgba(0,0,0,0.2), 0 0 22px var(--as-col, #FF6B35); }
 }
 
-/* Screen-reader only utility (same pattern as Bootstrap / Tailwind) */
-#accessscan-root .sr-only,
-.sr-only {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
+@keyframes as-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(0,0,0,0.4), 0 0 10px var(--as-col, #FF6B35); }
+  50%      { box-shadow: 0 0 0 4px rgba(0,0,0,0.2), 0 0 22px var(--as-col, #FF6B35); }
 }
 
-/* Status badge — fixed top-right corner */
-#accessscan-status-badge {
+/* ── On-page overlay HUD ─────────────────────────────────────────────────── */
+#accessscan-overlay {
   position: fixed !important;
   top: 12px !important;
   right: 12px !important;
-  padding: 4px 12px !important;
-  background: rgba(15, 15, 15, 0.85) !important;
-  color: #fff !important;
-  font: 700 13px/20px system-ui, sans-serif !important;
-  border-radius: 20px !important;
-  z-index: 2147483647 !important;
-  pointer-events: none !important;
-  backdrop-filter: blur(6px) !important;
-  border: 1px solid rgba(255,255,255,0.15) !important;
-  letter-spacing: 0.3px !important;
+  z-index: 2147483646 !important;
+  width: 220px !important;
+  background: rgba(13,17,23,0.94) !important;
+  border: 1px solid #30363d !important;
+  border-radius: 10px !important;
+  padding: 0 !important;
+  font-family: system-ui,-apple-system,sans-serif !important;
+  font-size: 12px !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+  backdrop-filter: blur(8px) !important;
+  overflow: hidden !important;
   user-select: none !important;
 }
 
-/* OSK iframe slide-up animation */
-#accessscan-osk-iframe {
-  animation: accessscan-slide-up 0.2s ease-out !important;
+#as-overlay-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 8px 10px !important;
+  background: rgba(255,107,53,0.12) !important;
+  border-bottom: 1px solid #30363d !important;
 }
 
-@keyframes accessscan-slide-up {
+#as-overlay-logo {
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  color: #ff6b35 !important;
+  letter-spacing: 0.3px !important;
+}
+
+#as-overlay-mode {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+  background: #ff6b35 !important;
+  color: #fff !important;
+  padding: 1px 6px !important;
+  border-radius: 10px !important;
+}
+
+/* Mode colour variants */
+#accessscan-overlay[data-mode="keyboard"] #as-overlay-mode { background: #58a6ff !important; }
+#accessscan-overlay[data-mode="choose-option"] #as-overlay-mode { background: #3fb950 !important; }
+#accessscan-overlay[data-mode="cred-prompt"] #as-overlay-mode { background: #d29922 !important; }
+
+#as-overlay-element {
+  padding: 8px 10px 4px !important;
+  border-bottom: 1px solid #21262d !important;
+}
+
+#as-overlay-element-label {
+  display: block !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #79c0ff !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 200px !important;
+}
+
+#as-overlay-hints {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 2px !important;
+  padding: 6px 10px !important;
+  border-bottom: 1px solid #21262d !important;
+}
+
+#as-overlay-hints span {
+  font-size: 11px !important;
+  color: #8b949e !important;
+}
+
+#as-overlay-status {
+  min-height: 22px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  color: #3fb950 !important;
+  font-weight: 500 !important;
+}
+
+/* ── OSK iframe ──────────────────────────────────────────────────────────── */
+#accessscan-osk-iframe {
+  animation: as-slide-up 0.18s ease-out !important;
+}
+
+@keyframes as-slide-up {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ── Select dialog ───────────────────────────────────────────────────────── */
+#accessscan-select-dialog {
+  position: fixed !important;
+  top: 50% !important; left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2147483645 !important;
+  background: #161b22 !important;
+  border: 1px solid #30363d !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  min-width: 280px !important;
+  max-width: 420px !important;
+  max-height: 70vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.8) !important;
+  font-family: system-ui,-apple-system,sans-serif !important;
+}
+
+#as-select-title {
+  padding: 14px 16px 10px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #e6edf3 !important;
+  border-bottom: 1px solid #30363d !important;
+}
+
+#as-select-list {
+  overflow-y: auto !important;
+  flex: 1 !important;
+  padding: 6px 0 !important;
+}
+
+.as-select-option {
+  padding: 10px 16px !important;
+  font-size: 13px !important;
+  color: #8b949e !important;
+  cursor: pointer !important;
+  transition: background 0.1s, color 0.1s !important;
+  border-left: 3px solid transparent !important;
+}
+
+.as-select-option.active {
+  background: rgba(255,107,53,0.15) !important;
+  color: #ff6b35 !important;
+  border-left-color: #ff6b35 !important;
+  font-weight: 600 !important;
+}
+
+#as-select-hint {
+  padding: 8px 16px !important;
+  font-size: 11px !important;
+  color: #8b949e !important;
+  border-top: 1px solid #30363d !important;
+  text-align: center !important;
+}
+
+/* ── Credential prompt ───────────────────────────────────────────────────── */
+#accessscan-cred-prompt {
+  position: fixed !important;
+  bottom: 80px !important; right: 16px !important;
+  z-index: 2147483645 !important;
+  background: #161b22 !important;
+  border: 1px solid #d29922 !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  min-width: 280px !important;
+  max-width: 360px !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7) !important;
+  font-family: system-ui,-apple-system,sans-serif !important;
+}
+
+#as-cred-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #e6edf3 !important;
+  margin-bottom: 6px !important;
+}
+
+#as-cred-user {
+  font-size: 12px !important;
+  color: #8b949e !important;
+  margin-bottom: 4px !important;
+}
+
+#as-cred-note {
+  font-size: 11px !important;
+  color: #8b949e !important;
+  margin-bottom: 12px !important;
+  font-style: italic !important;
+}
+
+#as-cred-options {
+  display: flex !important;
+  gap: 8px !important;
+  margin-bottom: 10px !important;
+}
+
+.as-cred-option {
+  flex: 1 !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  border: 1px solid #30363d !important;
+  color: #8b949e !important;
+  background: #21262d !important;
+  transition: all 0.12s !important;
+}
+
+.as-cred-option.active {
+  border-color: #ff6b35 !important;
+  background: rgba(255,107,53,0.15) !important;
+  color: #ff6b35 !important;
+}
+
+#as-cred-hint {
+  font-size: 11px !important;
+  color: #8b949e !important;
+  text-align: center !important;
+}
+
+/* ── Screen reader only ──────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important;
 }

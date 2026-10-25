@@ -1,454 +1,363 @@
 /**
- * AccessScan — On-Screen Keyboard Controller
+ * AccessScan v2.0 — Virtual Keyboard
  *
- * Features:
- *  - Multiple layouts: QWERTY, ABC, Numeric, Email
- *  - Hierarchical character scanning (row → key)
- *  - Shift / Caps-Lock support
- *  - Predictive text (simple frequency-based)
- *  - postMessage communication with the parent content script
+ * Spatial four-key grid navigation:
+ *   RIGHT → next key in same row
+ *   LEFT  → previous key in same row
+ *   DOWN  → type the highlighted key (activate)
+ *   UP    → move to row above / exit keyboard if on top row
+ *
+ * No auto-scanning timer. User navigates manually with arrows.
+ * No Enter or Space required for any operation.
+ *
+ * postMessage protocol (to parent):
+ *   { source:'accessscan-osk', type:'OSK_CHAR',      char }
+ *   { source:'accessscan-osk', type:'OSK_BACKSPACE'        }
+ *   { source:'accessscan-osk', type:'OSK_CLEAR'            }
+ *   { source:'accessscan-osk', type:'OSK_DONE'             }
+ *   { source:'accessscan-osk', type:'OSK_CANCEL'           }
+ *
+ * postMessage protocol (from parent):
+ *   { source:'accessscan-main', type:'INIT_VALUE', value, isPassword }
  */
 
 'use strict';
 
-// ── URL Parameter Parsing ─────────────────────────────────────────────────────
-const params = new URLSearchParams(window.location.search);
-const SWITCH_KEY = decodeURIComponent(params.get('switchKey') ?? ' ');
-const SCAN_INTERVAL = parseInt(params.get('interval') ?? '1500', 10);
-const INITIAL_LAYOUT = params.get('layout') ?? 'qwerty';
+// ── URL params ────────────────────────────────────────────────────────────────
+const params        = new URLSearchParams(window.location.search);
+const INITIAL_LAYOUT = params.get('layout')     ?? 'qwerty';
+const IS_PASSWORD    = params.get('isPassword') === 'true';
+const FIELD_LABEL    = decodeURIComponent(params.get('fieldLabel') ?? 'Text field');
 
-// ── Layouts ───────────────────────────────────────────────────────────────────
-
+// ── Keyboard layouts ──────────────────────────────────────────────────────────
+// Each inner array = one row. Special keys are ALL_CAPS strings.
 const LAYOUTS = {
   qwerty: [
     ['q','w','e','r','t','y','u','i','o','p'],
     ['a','s','d','f','g','h','j','k','l'],
     ['SHIFT','z','x','c','v','b','n','m','BACK'],
-    ['SYM','CLEAR','SPACE','@','.','DONE'],
-  ],
-  abc: [
-    ['a','b','c','d','e','f','g'],
-    ['h','i','j','k','l','m','n'],
-    ['o','p','q','r','s','t','u'],
-    ['v','w','x','y','z','BACK','DONE'],
-    ['CLEAR','SPACE','.',',','!','?','SHIFT'],
-  ],
-  numeric: [
-    ['7','8','9'],
-    ['4','5','6'],
-    ['1','2','3'],
-    ['CLEAR','0','BACK'],
-    ['.','DONE'],
+    ['SYM','CLEAR','SPACE','DONE','CANCEL'],
   ],
   email: [
     ['q','w','e','r','t','y','u','i','o','p'],
     ['a','s','d','f','g','h','j','k','l'],
     ['SHIFT','z','x','c','v','b','n','m','BACK'],
-    ['@','SPACE','.','_','-','CLEAR','DONE'],
+    ['@','.com','.','_','-','CLEAR','DONE','CANCEL'],
+  ],
+  numeric: [
+    ['7','8','9'],
+    ['4','5','6'],
+    ['1','2','3'],
+    ['+','0','.'],
+    ['CLEAR','BACK','DONE'],
   ],
   symbols: [
-    ['!','@','#','$','%','^','&','*','(',')',],
+    ['!','@','#','$','%','^','&','*','(',')'],
     ['-','_','=','+','[',']','{','}','|','\\'],
-    [';',':','"','\'','<','>',',','.','?','/'],
+    [';',':','"',"'",'<','>',',','.','?','/'],
     ['ABC','CLEAR','SPACE','BACK','DONE'],
   ],
 };
 
-const KEY_LABELS = {
-  SPACE: '⎵ Space',
-  BACK:  '⌫',
-  SHIFT: '⇧',
-  CLEAR: '✕ Clear',
-  DONE:  '✓ Done',
-  SYM:   '?123',
-  ABC:   'ABC',
+const KEY_DISPLAY = {
+  SPACE:  '⎵ Space',
+  BACK:   '⌫ Back',
+  SHIFT:  '⇧ Shift',
+  CLEAR:  '✕ Clear',
+  DONE:   '✓ Done',
+  CANCEL: '✕ Cancel',
+  SYM:    '?123',
+  ABC:    'ABC',
+  '.com': '.com',
+};
+
+const KEY_ARIA = {
+  SPACE:  'Space',
+  BACK:   'Backspace',
+  SHIFT:  'Shift',
+  CLEAR:  'Clear text',
+  DONE:   'Done, close keyboard',
+  CANCEL: 'Cancel, close keyboard',
+  SYM:    'Switch to symbols',
+  ABC:    'Switch to letters',
 };
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentLayout = INITIAL_LAYOUT;
 let isShift = false;
-let isCapsLock = false;
-let typedText = '';      // Mirror of what's in the input field
+let typedText = '';
+let rowIdx = 0;
+let colIdx = 0;
+let isPassword = IS_PASSWORD;
 
-// Hierarchical OSK scanning state
-// Phase 1: scan rows → Phase 2: scan keys in selected row
-let scanPhase = 'rows'; // 'rows' | 'keys'
-let rowIndex = 0;
-let keyIndex = 0;
-let scanTimer = null;
-let isPaused = false;
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+let keysEl, previewEl, fieldLabelEl, announceEl, titleEl;
 
-// ── DOM references ────────────────────────────────────────────────────────────
-const keysContainer = document.getElementById('osk-keys');
-const previewEl = document.getElementById('osk-preview');
-const groupIndicator = document.getElementById('osk-group-indicator');
-const announceEl = document.getElementById('osk-announce');
-
-// ── Initialization ────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 function init() {
-  buildKeyboard(currentLayout);
-  attachLayoutButtons();
-  attachControlButtons();
-  document.addEventListener('keydown', handleKeyDown, true);
+  keysEl      = document.getElementById('osk-keys');
+  previewEl   = document.getElementById('osk-preview');
+  fieldLabelEl= document.getElementById('osk-field-label');
+  announceEl  = document.getElementById('osk-announce');
+  titleEl     = document.getElementById('osk-title');
 
-  // Update preview when parent sends current input value
+  if (fieldLabelEl) fieldLabelEl.textContent = FIELD_LABEL;
+
+  buildLayout(currentLayout);
+  attachLayoutBtns();
+  updateHighlight();
+
+  document.addEventListener('keydown', onKeyDown, true);
+
   window.addEventListener('message', (e) => {
-    if (e.data?.source === 'accessscan-main' && e.data.type === 'INPUT_VALUE') {
-      typedText = e.data.value ?? '';
-      updatePreview();
+    if (e.data?.source === 'accessscan-main' && e.data.type === 'INIT_VALUE') {
+      isPassword = e.data.isPassword ?? IS_PASSWORD;
+      if (!isPassword) {
+        typedText = e.data.value ?? '';
+        updatePreview();
+      }
     }
   });
-
-  startScanning();
 }
 
-// ── Keyboard Builder ──────────────────────────────────────────────────────────
-function buildKeyboard(layout) {
-  keysContainer.innerHTML = '';
-  const rows = LAYOUTS[layout] ?? LAYOUTS.qwerty;
+// ── Layout builder ────────────────────────────────────────────────────────────
+function buildLayout(layoutName) {
+  currentLayout = layoutName;
+  keysEl.innerHTML = '';
+  const rows = LAYOUTS[layoutName] ?? LAYOUTS.qwerty;
 
   rows.forEach((row, rIdx) => {
     const rowEl = document.createElement('div');
     rowEl.className = 'osk-row';
-    rowEl.dataset.rowIndex = rIdx;
+    rowEl.dataset.row = rIdx;
 
-    row.forEach((key, kIdx) => {
+    row.forEach((key, cIdx) => {
       const btn = document.createElement('button');
-      btn.className = getKeyClasses(key);
+      btn.className = 'osk-key' + getExtraClass(key);
+      btn.dataset.row = rIdx;
+      btn.dataset.col = cIdx;
       btn.dataset.key = key;
-      btn.dataset.rowIndex = rIdx;
-      btn.dataset.keyIndex = kIdx;
-      btn.textContent = getKeyLabel(key);
-      btn.setAttribute('aria-label', getAriaLabel(key));
-      btn.addEventListener('click', () => activateKey(key));
+      btn.textContent = displayKey(key);
+      btn.setAttribute('aria-label', KEY_ARIA[key] ?? (key.length === 1 ? key : key));
+      btn.setAttribute('tabindex', '-1'); // arrow-key only navigation
+      btn.addEventListener('click', () => activateKey(key)); // mouse fallback
       rowEl.appendChild(btn);
     });
 
-    keysContainer.appendChild(rowEl);
+    keysEl.appendChild(rowEl);
   });
+
+  // Reset cursor to first key
+  rowIdx = 0;
+  colIdx = 0;
+  updateHighlight();
 }
 
-function getKeyClasses(key) {
-  const base = 'osk-key';
-  const map = {
-    SPACE: 'key-space',
-    BACK:  'key-back',
-    SHIFT: 'key-shift',
-    CLEAR: 'key-clear',
-    DONE:  'key-done',
-    '@':   'key-at',
-    '.':   'key-dot',
-    SYM:   'key-sym',
-    ABC:   'key-sym',
-  };
-  return `${base}${map[key] ? ` ${map[key]}` : ''}`;
-}
-
-function getKeyLabel(key) {
-  return KEY_LABELS[key] ?? (isShift || isCapsLock ? key.toUpperCase() : key);
-}
-
-function getAriaLabel(key) {
+function getExtraClass(key) {
   const MAP = {
-    SPACE: 'Space',
-    BACK:  'Backspace',
-    SHIFT: 'Shift',
-    CLEAR: 'Clear all text',
-    DONE:  'Done, close keyboard',
-    SYM:   'Switch to symbols',
-    ABC:   'Switch to letters',
-    '@':   'At sign',
-    '.':   'Period',
+    SPACE: ' key-space', BACK: ' key-back', CLEAR: ' key-clear',
+    DONE: ' key-done', CANCEL: ' key-cancel', SHIFT: ' key-shift',
+    SYM: ' key-special', ABC: ' key-special', '.com': ' key-special',
   };
-  return MAP[key] ?? key;
+  return MAP[key] ?? '';
 }
 
-// ── Layout Switching ──────────────────────────────────────────────────────────
-function switchLayout(layout) {
-  currentLayout = layout;
-  buildKeyboard(layout);
-
-  // Update active state on layout buttons
-  document.querySelectorAll('.layout-btn').forEach((btn) => {
-    const active = btn.dataset.layout === layout;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-pressed', String(active));
-  });
-
-  // Reset scanning
-  rowIndex = 0;
-  keyIndex = 0;
-  scanPhase = 'rows';
-  restartScanning();
+function displayKey(key) {
+  const label = KEY_DISPLAY[key];
+  if (label) return label;
+  if (key.length === 1) return isShift ? key.toUpperCase() : key;
+  return key;
 }
 
-function attachLayoutButtons() {
-  document.querySelectorAll('.layout-btn').forEach((btn) => {
-    btn.addEventListener('click', () => switchLayout(btn.dataset.layout));
+function attachLayoutBtns() {
+  document.querySelectorAll('[data-layout]').forEach((btn) => {
+    btn.addEventListener('click', () => buildLayout(btn.dataset.layout));
   });
 }
 
-function attachControlButtons() {
-  document.getElementById('btn-pause').addEventListener('click', togglePause);
-  document.getElementById('btn-done').addEventListener('click', () => sendToParent('OSK_DONE'));
-  document.getElementById('btn-close').addEventListener('click', () => sendToParent('OSK_DONE'));
+// ── Highlight ─────────────────────────────────────────────────────────────────
+function updateHighlight() {
+  document.querySelectorAll('.osk-key').forEach((k) => k.classList.remove('active-key'));
+
+  const rows = getRows();
+  if (!rows[rowIdx]) return;
+  const keys = getKeys(rows[rowIdx]);
+  const safeCol = Math.min(colIdx, keys.length - 1);
+  colIdx = safeCol;
+
+  if (keys[colIdx]) {
+    keys[colIdx].classList.add('active-key');
+    keys[colIdx].scrollIntoView({ block: 'nearest' });
+    announce(getAnnounceText(keys[colIdx].dataset.key));
+  }
+
+  // Update row indicator
+  const indicator = document.getElementById('osk-row-indicator');
+  if (indicator) {
+    indicator.textContent = `Row ${rowIdx + 1} / ${rows.length}`;
+  }
 }
 
-// ── Key Activation ────────────────────────────────────────────────────────────
+function getAnnounceText(key) {
+  return KEY_ARIA[key] ?? (key === ' ' ? 'Space' : key);
+}
+
+// ── Key navigation ────────────────────────────────────────────────────────────
+function onKeyDown(event) {
+  const { key } = event;
+  if (!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp'].includes(key)) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  const rows = getRows();
+
+  switch (key) {
+    case 'ArrowRight': {
+      const keys = getKeys(rows[rowIdx]);
+      colIdx = (colIdx + 1) % keys.length;
+      updateHighlight();
+      break;
+    }
+    case 'ArrowLeft': {
+      const keys = getKeys(rows[rowIdx]);
+      colIdx = (colIdx - 1 + keys.length) % keys.length;
+      updateHighlight();
+      break;
+    }
+    case 'ArrowDown': {
+      // Activate the highlighted key
+      const keys = getKeys(rows[rowIdx]);
+      const keyEl = keys[Math.min(colIdx, keys.length - 1)];
+      if (keyEl) activateKey(keyEl.dataset.key);
+      break;
+    }
+    case 'ArrowUp': {
+      if (rowIdx > 0) {
+        rowIdx--;
+        updateHighlight();
+      } else {
+        // On the topmost row — exit keyboard
+        sendToParent('OSK_CANCEL');
+      }
+      break;
+    }
+  }
+}
+
+// Helper to move DOWN to next row (used after some key activations)
+function moveRowDown() {
+  const rows = getRows();
+  if (rowIdx < rows.length - 1) {
+    rowIdx++;
+    updateHighlight();
+  }
+}
+
+function getRows() {
+  return Array.from(keysEl.querySelectorAll('.osk-row'));
+}
+
+function getKeys(rowEl) {
+  return rowEl ? Array.from(rowEl.querySelectorAll('.osk-key')) : [];
+}
+
+// ── Key activation ────────────────────────────────────────────────────────────
 function activateKey(key) {
-  rippleEffect(key);
+  // Ripple
+  const btn = keysEl.querySelector(`.osk-key[data-key="${CSS.escape(key)}"]`);
+  if (btn) { btn.classList.add('ripple'); setTimeout(() => btn.classList.remove('ripple'), 250); }
 
-  if (key === 'SHIFT') {
-    isShift = !isShift;
-    refreshKeyLabels();
-    announce(isShift ? 'Shift on' : 'Shift off');
-    return;
+  switch (key) {
+    case 'SHIFT':
+      isShift = !isShift;
+      refreshLetterLabels();
+      announce(isShift ? 'Shift on' : 'Shift off');
+      return;
+
+    case 'BACK':
+      if (typedText.length > 0) typedText = typedText.slice(0, -1);
+      updatePreview();
+      sendToParent('OSK_BACKSPACE');
+      announce('Backspace');
+      return;
+
+    case 'CLEAR':
+      typedText = '';
+      updatePreview();
+      sendToParent('OSK_CLEAR');
+      announce('Cleared');
+      return;
+
+    case 'DONE':
+      sendToParent('OSK_DONE');
+      return;
+
+    case 'CANCEL':
+      sendToParent('OSK_CANCEL');
+      return;
+
+    case 'SPACE':
+      typeChar(' ');
+      announce('Space');
+      return;
+
+    case 'SYM':
+      buildLayout('symbols');
+      return;
+
+    case 'ABC':
+      buildLayout('qwerty');
+      return;
+
+    default: {
+      // Regular character (including .com)
+      const char = (isShift && key.length === 1) ? key.toUpperCase() : key;
+      typeChar(char);
+      if (isShift && key.length === 1) {
+        isShift = false;
+        refreshLetterLabels();
+      }
+    }
   }
+}
 
-  if (key === 'BACK') {
-    typedText = typedText.slice(0, -1);
-    updatePreview();
-    sendToParent('OSK_BACKSPACE');
-    announce('Backspace');
-    return;
-  }
-
-  if (key === 'CLEAR') {
-    typedText = '';
-    updatePreview();
-    sendToParent('OSK_CLEAR');
-    announce('Clear');
-    return;
-  }
-
-  if (key === 'DONE') {
-    sendToParent('OSK_DONE');
-    return;
-  }
-
-  if (key === 'SPACE') {
-    const char = ' ';
-    typedText += char;
-    updatePreview();
-    sendToParent('OSK_CHAR', char);
-    announce('Space');
-    return;
-  }
-
-  if (key === 'SYM') {
-    switchLayout('symbols');
-    return;
-  }
-
-  if (key === 'ABC') {
-    switchLayout('qwerty');
-    return;
-  }
-
-  // Regular character
-  const char = (isShift || isCapsLock) ? key.toUpperCase() : key;
-  typedText += char;
+function typeChar(char) {
+  if (!isPassword) typedText += char;
   updatePreview();
   sendToParent('OSK_CHAR', char);
-  announce(char);
-
-  // Auto-reset shift after one character
-  if (isShift && !isCapsLock) {
-    isShift = false;
-    refreshKeyLabels();
-  }
+  announce(char === ' ' ? 'Space' : char);
 }
 
-function refreshKeyLabels() {
-  document.querySelectorAll('.osk-key').forEach((btn) => {
-    const key = btn.dataset.key;
-    if (key && key.length === 1) {
-      btn.textContent = isShift || isCapsLock ? key.toUpperCase() : key;
+function refreshLetterLabels() {
+  keysEl.querySelectorAll('.osk-key').forEach((btn) => {
+    const k = btn.dataset.key;
+    if (k && k.length === 1 && /[a-z]/i.test(k)) {
+      btn.textContent = isShift ? k.toUpperCase() : k.toLowerCase();
     }
   });
-}
-
-function rippleEffect(key) {
-  const btn = document.querySelector(`.osk-key[data-key="${CSS.escape(key)}"]`);
-  if (!btn) return;
-  btn.classList.add('ripple');
-  setTimeout(() => btn.classList.remove('ripple'), 300);
 }
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 function updatePreview() {
-  previewEl.textContent = typedText || '…';
-}
-
-// ── Hierarchical Scanning ─────────────────────────────────────────────────────
-function startScanning() {
-  isPaused = false;
-  scanPhase = 'rows';
-  rowIndex = 0;
-  keyIndex = 0;
-  scheduleTick();
-}
-
-function restartScanning() {
-  clearTimeout(scanTimer);
-  startScanning();
-}
-
-function togglePause() {
-  isPaused = !isPaused;
-  const btn = document.getElementById('btn-pause');
-  btn.textContent = isPaused ? '▶' : '⏸';
-  btn.setAttribute('aria-label', isPaused ? 'Resume scanning' : 'Pause scanning');
-  if (!isPaused) scheduleTick();
-}
-
-function scheduleTick() {
-  clearTimeout(scanTimer);
-  if (!isPaused) {
-    scanTimer = setTimeout(scanTick, SCAN_INTERVAL);
-  }
-}
-
-function scanTick() {
-  if (isPaused) return;
-  highlightCurrent();
-  advance();
-  scheduleTick();
-}
-
-function highlightCurrent() {
-  // Clear previous highlights
-  document.querySelectorAll('.osk-row').forEach((r) => r.classList.remove('group-scanning'));
-  document.querySelectorAll('.osk-key').forEach((k) => k.classList.remove('scanning'));
-
-  const rows = keysContainer.querySelectorAll('.osk-row');
-  if (rows.length === 0) return;
-
-  if (scanPhase === 'rows') {
-    // Highlight entire row
-    const rowEl = rows[rowIndex];
-    if (rowEl) {
-      rowEl.classList.add('group-scanning');
-      groupIndicator.textContent = `Row ${rowIndex + 1} of ${rows.length}`;
-      const rowKeys = Array.from(rowEl.querySelectorAll('.osk-key'));
-      const label = rowKeys.map((k) => getAriaLabel(k.dataset.key)).join(', ');
-      announce(`Row ${rowIndex + 1}: ${label}`);
-    }
+  if (!previewEl) return;
+  if (isPassword) {
+    previewEl.textContent = '•'.repeat(typedText.length) || '(password)';
   } else {
-    // Highlight individual key
-    const rowEl = rows[rowIndex];
-    if (!rowEl) return;
-    const keys = rowEl.querySelectorAll('.osk-key');
-    const keyEl = keys[keyIndex];
-    if (keyEl) {
-      keyEl.classList.add('scanning');
-      groupIndicator.textContent = '';
-      announce(getAriaLabel(keyEl.dataset.key));
-    }
+    previewEl.textContent = typedText || '…';
   }
 }
 
-function advance() {
-  const rows = keysContainer.querySelectorAll('.osk-row');
-
-  if (scanPhase === 'rows') {
-    rowIndex = (rowIndex + 1) % rows.length;
-  } else {
-    const rowEl = rows[rowIndex];
-    if (!rowEl) { scanPhase = 'rows'; return; }
-    const keys = rowEl.querySelectorAll('.osk-key');
-    keyIndex = (keyIndex + 1) % keys.length;
-    if (keyIndex === 0) {
-      // Went past last key — back to row scanning
-      scanPhase = 'rows';
-    }
-  }
-}
-
-// ── Key Handler ───────────────────────────────────────────────────────────────
-function handleKeyDown(event) {
-  const key = event.key;
-
-  if (key === SWITCH_KEY || key === ' ') {
-    event.preventDefault();
-    event.stopPropagation();
-    handleSelect();
-    return;
-  }
-
-  if (key === 'Escape') {
-    event.preventDefault();
-    togglePause();
-    return;
-  }
-
-  if (key === 'ArrowRight' || key === 'ArrowDown') {
-    event.preventDefault();
-    advance();
-    highlightCurrent();
-    scheduleTick();
-    return;
-  }
-
-  if (key === 'ArrowLeft' || key === 'ArrowUp') {
-    event.preventDefault();
-    goBack();
-    highlightCurrent();
-    scheduleTick();
-    return;
-  }
-}
-
-function handleSelect() {
-  const rows = keysContainer.querySelectorAll('.osk-row');
-
-  if (scanPhase === 'rows') {
-    // Select this row — dive into keys
-    scanPhase = 'keys';
-    keyIndex = 0;
-    clearTimeout(scanTimer);
-    highlightCurrent();
-    scheduleTick();
-  } else {
-    // Activate the currently highlighted key
-    const rowEl = rows[rowIndex];
-    if (!rowEl) return;
-    const keys = rowEl.querySelectorAll('.osk-key');
-    const keyEl = keys[keyIndex];
-    if (keyEl) {
-      const k = keyEl.dataset.key;
-      activateKey(k);
-      // Go back to row scanning
-      scanPhase = 'rows';
-      keyIndex = 0;
-      clearTimeout(scanTimer);
-      highlightCurrent();
-      scheduleTick();
-    }
-  }
-}
-
-function goBack() {
-  if (scanPhase === 'keys') {
-    const rows = keysContainer.querySelectorAll('.osk-row');
-    const rowEl = rows[rowIndex];
-    const keys = rowEl ? rowEl.querySelectorAll('.osk-key') : [];
-    keyIndex = (keyIndex - 1 + keys.length) % Math.max(keys.length, 1);
-  } else {
-    const rows = keysContainer.querySelectorAll('.osk-row');
-    rowIndex = (rowIndex - 1 + rows.length) % Math.max(rows.length, 1);
-  }
-}
-
-// ── Utilities ─────────────────────────────────────────────────────────────────
-function sendToParent(type, char) {
-  window.parent.postMessage({ source: 'accessscan-osk', type, char }, '*');
-}
-
+// ── Announce ──────────────────────────────────────────────────────────────────
 function announce(text) {
+  if (!announceEl) return;
   announceEl.textContent = '';
   requestAnimationFrame(() => { announceEl.textContent = text; });
 }
 
+// ── postMessage ───────────────────────────────────────────────────────────────
+function sendToParent(type, char) {
+  window.parent.postMessage({ source: 'accessscan-osk', type, char }, '*');
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
-init();
+document.addEventListener('DOMContentLoaded', init);

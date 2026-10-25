@@ -3,189 +3,496 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AccessScan — Demo Test Page</title>
+  <title>AccessScan v2.0 — Four-Key Accessible College Portal</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root { --accent: #FF6B35; }
-    body { font-family: system-ui, sans-serif; color: #1a1a2e; background: #f5f5f7; }
-    header { background: var(--accent); color: #fff; padding: 20px 32px; }
-    header h1 { font-size: 24px; }
-    header p  { font-size: 14px; opacity: 0.85; margin-top: 4px; }
-    nav { background: #1a1a2e; padding: 0 32px; display: flex; gap: 0; }
-    nav a { color: #ccc; text-decoration: none; padding: 12px 16px; display: block; font-size: 14px; }
-    nav a:hover, nav a:focus { color: #fff; background: rgba(255,255,255,0.1); }
-    main { max-width: 800px; margin: 32px auto; padding: 0 24px; display: grid; gap: 24px; }
-    section { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-    h2 { font-size: 18px; margin-bottom: 16px; color: #1a1a2e; }
-    h3 { font-size: 14px; color: #555; margin-bottom: 8px; }
-    label { display: block; font-size: 14px; margin-bottom: 4px; font-weight: 500; }
-    input, select, textarea {
-      width: 100%; padding: 8px 12px;
-      border: 1px solid #ddd; border-radius: 6px;
-      font-size: 14px; margin-bottom: 12px;
+    :root {
+      --accent: #FF6B35;
+      --accent-dark: #e05a28;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --radius: 12px;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────────── */
+    header {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      color: #fff;
+      padding: 24px 32px;
+      border-bottom: 4px solid var(--accent);
+    }
+    .header-content {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    header h1 {
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    header p {
+      font-size: 14px;
+      color: #94a3b8;
+      margin-top: 6px;
+    }
+
+    /* ── Four-key banner ───────────────────────────────────────────────────── */
+    .key-instructions {
+      background: rgba(255,107,53,0.12);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 16px;
+      margin-top: 14px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+    }
+    .key-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .key-badge kbd {
+      background: var(--accent);
+      color: #fff;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+
+    /* ── Navigation ────────────────────────────────────────────────────────── */
+    nav {
+      background: #0f172a;
+      padding: 0 32px;
+    }
+    .nav-inner {
+      max-width: 900px;
+      margin: 0 auto;
+      display: flex;
+      flex-wrap: wrap;
+    }
+    nav a {
+      color: #cbd5e1;
+      text-decoration: none;
+      padding: 12px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    nav a:hover, nav a:focus {
+      color: #fff;
+      background: rgba(255,255,255,0.1);
+      outline: none;
+    }
+
+    /* ── Main content ──────────────────────────────────────────────────────── */
+    main {
+      max-width: 900px;
+      margin: 28px auto;
+      padding: 0 20px;
+      display: grid;
+      gap: 24px;
+    }
+    section {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      padding: 24px;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .section-desc {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    /* ── Form Controls ─────────────────────────────────────────────────────── */
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    input[type="text"],
+    input[type="email"],
+    input[type="tel"],
+    input[type="number"],
+    input[type="password"],
+    select,
+    textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      margin-bottom: 14px;
+      background: #fff;
+      color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
     input:focus, select:focus, textarea:focus {
-      outline: 2px solid var(--accent); border-color: var(--accent);
+      border-color: var(--accent);
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(255,107,53,0.18);
     }
-    button {
-      background: var(--accent); color: #fff;
-      border: none; border-radius: 6px;
-      padding: 10px 20px; font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: background 0.15s;
+
+    .form-group-inline {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 14px;
     }
-    button:hover { background: #e05a28; }
-    button:focus { outline: 3px solid #e05a28; outline-offset: 2px; }
+    .radio-label, .check-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .radio-label input, .check-label input {
+      accent-color: var(--accent);
+      width: 16px;
+      height: 16px;
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────────────────── */
+    button, .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, transform 0.05s;
+    }
+    button:hover { background: var(--accent-dark); }
+    button:active { transform: scale(0.98); }
+    button:focus { outline: 3px solid var(--accent-dark); outline-offset: 2px; }
+
     .btn-secondary {
-      background: #6b7280; margin-left: 8px;
+      background: #475569;
     }
-    .inline-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 12px; }
-    .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; cursor: pointer; transition: border-color 0.15s; }
-    .card:hover, .card:focus { border-color: var(--accent); outline: none; }
-    .card h3 { font-size: 15px; margin-bottom: 4px; }
-    .card p { font-size: 12px; color: #6b7280; }
-    footer { background: #1a1a2e; color: #9ca3af; text-align: center; padding: 24px; font-size: 13px; }
-    .result-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px; font-size: 13px; display: none; }
+    .btn-secondary:hover { background: #334155; }
+
+    .inline-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Cards ─────────────────────────────────────────────────────────────── */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      cursor: pointer;
+      background: #fff;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .card:hover, .card:focus {
+      border-color: var(--accent);
+      outline: none;
+      box-shadow: 0 4px 12px rgba(255,107,53,0.12);
+    }
+    .card h3 {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .card p {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Modal Dialog ──────────────────────────────────────────────────────── */
+    dialog {
+      margin: auto;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 16px 48px rgba(0,0,0,0.25);
+      max-width: 440px;
+      width: 90%;
+    }
+    dialog::backdrop {
+      background: rgba(15,23,42,0.65);
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── Result Box ────────────────────────────────────────────────────────── */
+    .result-box {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      color: #166534;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      display: none;
+      margin-top: 14px;
+    }
     .result-box.show { display: block; }
-    #accordion summary { cursor: pointer; padding: 12px; font-weight: 600; list-style: none; }
-    #accordion summary::-webkit-details-marker { display: none; }
-    details { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 8px; }
-    details[open] summary { border-bottom: 1px solid #e5e7eb; }
-    details p { padding: 12px; font-size: 14px; color: #555; }
+
+    /* ── Details / Accordion ───────────────────────────────────────────────── */
+    details {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      background: #f8fafc;
+      user-select: none;
+    }
+    summary:focus {
+      outline: 2px solid var(--accent);
+    }
+    details[open] summary {
+      border-bottom: 1px solid var(--border);
+    }
+    details p {
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #334155;
+    }
+
+    /* ── Dynamic Container ─────────────────────────────────────────────────── */
+    #dynamic-container {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ── Footer ────────────────────────────────────────────────────────────── */
+    footer {
+      background: #0f172a;
+      color: #94a3b8;
+      text-align: center;
+      padding: 28px 20px;
+      font-size: 12px;
+      border-top: 1px solid #1e293b;
+    }
+    footer a { color: #cbd5e1; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>♿ AccessScan Demo Page</h1>
-  <p>A realistic webpage for testing the AccessScan extension. Enable AccessScan, then press Space to select elements.</p>
+  <div class="header-content">
+    <h1>♿ AccessScan v2.0 Demo — College Portal</h1>
+    <p>Operate this entire webpage, fill forms, and trigger actions using ONLY the 4 arrow keys. No Enter, Space, or Mouse needed!</p>
+
+    <div class="key-instructions" aria-label="Keyboard control guide">
+      <div class="key-badge"><kbd>→</kbd> Next control</div>
+      <div class="key-badge"><kbd>←</kbd> Previous control</div>
+      <div class="key-badge"><kbd>↓</kbd> Activate / Open Keyboard / Enter Section</div>
+      <div class="key-badge"><kbd>↑</kbd> Back / Cancel / Stop</div>
+    </div>
+  </div>
 </header>
 
-<nav aria-label="Main navigation">
-  <a href="#form-section">Form</a>
-  <a href="#buttons-section">Buttons</a>
-  <a href="#cards-section">Cards</a>
-  <a href="#accordion-section">FAQ</a>
-  <a href="#footer">Contact</a>
+<nav aria-label="Main Navigation">
+  <div class="nav-inner">
+    <a href="#form-section">Login Portal</a>
+    <a href="#dialog-section">Campus Notice</a>
+    <a href="#buttons-section">Quick Actions</a>
+    <a href="#cards-section">Dashboard</a>
+    <a href="#contact-section">Support</a>
+    <a href="#faq-section">FAQ</a>
+  </div>
 </nav>
 
 <main>
 
-  <!-- ── Login Form ─────────────────────────────────────────────────────────── -->
+  <!-- ── 1. Login Form ─────────────────────────────────────────────────────── -->
   <section id="form-section" aria-labelledby="form-heading">
-    <h2 id="form-heading">📝 College Portal Login</h2>
-    <p style="margin-bottom:16px;font-size:14px;color:#555;">
-      Test scanning &amp; text entry on this form.
-    </p>
+    <h2 id="form-heading">📝 Student Portal Login</h2>
+    <p class="section-desc">Test four-key text entry with the automatic virtual keyboard, selection dialogs, and credential autofill.</p>
+
     <form id="login-form" onsubmit="handleFormSubmit(event)">
       <label for="username">Student ID / Username</label>
-      <input type="text" id="username" name="username" placeholder="e.g. student123" autocomplete="username" />
+      <input type="text" id="username" name="username" placeholder="e.g. alex2026" autocomplete="username" />
 
       <label for="password">Password</label>
-      <input type="password" id="password" name="password" placeholder="Enter password" autocomplete="current-password" />
+      <input type="password" id="password" name="password" placeholder="Enter secure password" autocomplete="current-password" />
 
       <label for="department">Department</label>
       <select id="department" name="department">
-        <option value="">— Select department —</option>
-        <option value="cs">Computer Science</option>
-        <option value="ee">Electrical Engineering</option>
+        <option value="">— Select your department —</option>
+        <option value="cs">Computer Science & Engineering</option>
+        <option value="ee">Electrical & Electronics</option>
         <option value="me">Mechanical Engineering</option>
-        <option value="ce">Civil Engineering</option>
+        <option value="bt">Biotechnology</option>
       </select>
 
-      <label>
+      <div class="form-group-inline">
+        <label class="radio-label">
+          <input type="radio" name="program" value="ug" checked /> Undergraduate (UG)
+        </label>
+        <label class="radio-label">
+          <input type="radio" name="program" value="pg" /> Postgraduate (PG)
+        </label>
+      </div>
+
+      <label class="check-label">
         <input type="checkbox" id="remember-me" name="remember" />
-        Remember me on this device
+        Keep me signed in on this workstation
       </label>
-      <br />
+      <br /><br />
 
       <div class="inline-buttons">
-        <button type="submit" id="btn-login">🔐 Login</button>
-        <button type="reset" class="btn-secondary">✕ Clear form</button>
+        <button type="submit" id="btn-login">🔐 Sign In</button>
+        <button type="reset" class="btn-secondary" id="btn-clear-form">✕ Reset Form</button>
       </div>
     </form>
     <div id="form-result" class="result-box" role="status" aria-live="polite"></div>
   </section>
 
-  <!-- ── Buttons ────────────────────────────────────────────────────────────── -->
-  <section id="buttons-section" aria-labelledby="buttons-heading">
-    <h2 id="buttons-heading">🎮 Action Buttons</h2>
+  <!-- ── 2. Modal Dialog Section ───────────────────────────────────────────── -->
+  <section id="dialog-section" aria-labelledby="dialog-heading">
+    <h2 id="dialog-heading">📢 Campus Announcement Dialog</h2>
+    <p class="section-desc">Test interactive control trapping inside a native HTML5 &lt;dialog&gt; modal window.</p>
+
     <div class="inline-buttons">
-      <button onclick="flashMessage('Notifications enabled ✓')">🔔 Notifications</button>
-      <button onclick="flashMessage('Profile saved ✓')">👤 Profile</button>
-      <button onclick="flashMessage('Timetable opened')">📅 Timetable</button>
-      <button onclick="flashMessage('Results downloaded')">📊 Results</button>
-      <button onclick="flashMessage('Fee receipt generated')">💰 Fee Receipt</button>
-      <button onclick="flashMessage('Help opened')">❓ Help</button>
+      <button id="btn-open-modal" onclick="document.getElementById('announcement-modal').showModal()">
+        🔔 View Urgent Exam Notice
+      </button>
+      <button id="btn-add-dynamic" class="btn-secondary" onclick="addDynamicItem()">
+        ➕ Load Live Event Item
+      </button>
     </div>
-    <div id="action-result" class="result-box" role="status" aria-live="polite" style="margin-top:12px;"></div>
+
+    <div id="dynamic-container" aria-live="polite"></div>
+
+    <!-- Native modal dialog -->
+    <dialog id="announcement-modal" aria-labelledby="modal-title">
+      <h3 id="modal-title" style="margin-bottom:8px;font-size:16px;">⚠️ Semester Examination Notice</h3>
+      <p style="font-size:13px;color:#475569;margin-bottom:16px;">
+        Hall tickets for the upcoming Fall Semester examinations are now available for download. Please verify your registered subjects before Friday.
+      </p>
+      <div class="inline-buttons">
+        <button id="btn-ack-modal" onclick="ackModal()">✓ Understood &amp; Close</button>
+        <button class="btn-secondary" onclick="document.getElementById('announcement-modal').close()">Cancel</button>
+      </div>
+    </dialog>
+    <div id="dialog-result" class="result-box" role="status" aria-live="polite"></div>
   </section>
 
-  <!-- ── Card Grid ──────────────────────────────────────────────────────────── -->
+  <!-- ── 3. Quick Action Buttons ───────────────────────────────────────────── -->
+  <section id="buttons-section" aria-labelledby="buttons-heading">
+    <h2 id="buttons-heading">⚡ Quick Student Actions</h2>
+    <p class="section-desc">Every action can be triggered directly with the Down arrow key.</p>
+
+    <div class="inline-buttons">
+      <button onclick="flashMessage('action-result', 'Attendance summary downloaded')">📊 Attendance (92%)</button>
+      <button onclick="flashMessage('action-result', 'Grade card generated (GPA: 8.9)')">🎓 View Marksheet</button>
+      <button onclick="flashMessage('action-result', 'Hostel mess fee receipt generated')">💳 Fee Receipt</button>
+      <button onclick="flashMessage('action-result', 'WiFi access request approved')">📶 Campus WiFi</button>
+    </div>
+    <div id="action-result" class="result-box" role="status" aria-live="polite"></div>
+  </section>
+
+  <!-- ── 4. Dashboard Cards ────────────────────────────────────────────────── -->
   <section id="cards-section" aria-labelledby="cards-heading">
-    <h2 id="cards-heading">🗂️ Dashboard Cards</h2>
-    <p style="margin-bottom:12px;font-size:14px;color:#555;">Each card is a focusable, selectable element.</p>
+    <h2 id="cards-heading">🗂️ Academic Dashboard</h2>
+    <p class="section-desc">Interactive cards using semantic tabindex and role="button".</p>
+
     <div class="card-grid">
-      <div class="card" tabindex="0" role="button" onclick="flashMessage('Attendance: 87%')" onkeypress="if(event.key==='Enter')this.click()">
-        <h3>📈 Attendance</h3>
-        <p>View your attendance records</p>
+      <div class="card" tabindex="0" role="button" aria-label="Digital Library - 3 Books Borrowed" onclick="flashMessage('card-result', 'Digital Library opened: 3 books active')">
+        <h3>📚 Digital Library</h3>
+        <p>Renew books &amp; journals</p>
       </div>
-      <div class="card" tabindex="0" role="button" onclick="flashMessage('GPA: 8.4 / 10')" onkeypress="if(event.key==='Enter')this.click()">
-        <h3>🎓 Grades</h3>
-        <p>Check semester grades</p>
+      <div class="card" tabindex="0" role="button" aria-label="Course Schedule - 4 Lectures Today" onclick="flashMessage('card-result', 'Timetable opened: 4 classes today')">
+        <h3>📅 Daily Timetable</h3>
+        <p>Lab &amp; lecture schedule</p>
       </div>
-      <div class="card" tabindex="0" role="button" onclick="flashMessage('Library: 2 books due')" onkeypress="if(event.key==='Enter')this.click()">
-        <h3>📚 Library</h3>
-        <p>Manage borrowed books</p>
+      <div class="card" tabindex="0" role="button" aria-label="Placement Cell - 5 Companies Registered" onclick="flashMessage('card-result', 'Placement Portal: 5 jobs matching your profile')">
+        <h3>💼 Placement Cell</h3>
+        <p>Interviews &amp; internships</p>
       </div>
-      <div class="card" tabindex="0" role="button" onclick="flashMessage('Exam schedule loaded')" onkeypress="if(event.key==='Enter')this.click()">
-        <h3>📝 Exams</h3>
-        <p>View exam schedule</p>
+      <div class="card" tabindex="0" role="button" aria-label="Health Center - Appointment Booking" onclick="flashMessage('card-result', 'Health Center appointment slot confirmed')">
+        <h3>🏥 Health Center</h3>
+        <p>Consult campus physician</p>
       </div>
     </div>
-    <div id="card-result" class="result-box" role="status" aria-live="polite" style="margin-top:12px;"></div>
+    <div id="card-result" class="result-box" role="status" aria-live="polite"></div>
   </section>
 
-  <!-- ── Contact Form ───────────────────────────────────────────────────────── -->
-  <section aria-labelledby="contact-heading">
-    <h2 id="contact-heading">✉️ Contact Support</h2>
+  <!-- ── 5. Contact Support Form ───────────────────────────────────────────── -->
+  <section id="contact-section" aria-labelledby="contact-heading">
+    <h2 id="contact-heading">✉️ Accessibility Helpdesk</h2>
+    <p class="section-desc">Test input fields for email, telephone, and multiline textareas.</p>
+
     <form onsubmit="handleContactSubmit(event)">
       <label for="contact-name">Full Name</label>
-      <input type="text" id="contact-name" placeholder="Your name" />
+      <input type="text" id="contact-name" placeholder="Full legal name" />
 
       <label for="contact-email">Email Address</label>
-      <input type="email" id="contact-email" placeholder="you@college.edu" />
+      <input type="email" id="contact-email" placeholder="name@college.edu" />
 
-      <label for="contact-phone">Phone Number</label>
-      <input type="tel" id="contact-phone" placeholder="+91 9999999999" />
+      <label for="contact-phone">Phone / Switch Assist Number</label>
+      <input type="tel" id="contact-phone" placeholder="+1-555-0199" />
 
-      <label for="contact-message">Message</label>
-      <textarea id="contact-message" rows="4" placeholder="Describe your issue…"></textarea>
+      <label for="contact-msg">Accessibility Feedback or Inquiries</label>
+      <textarea id="contact-msg" rows="3" placeholder="Describe any accommodation or browser assistant needs..."></textarea>
 
-      <button type="submit">📨 Send Message</button>
+      <button type="submit" id="btn-send-contact">📨 Submit Inquiry</button>
     </form>
     <div id="contact-result" class="result-box" role="status" aria-live="polite"></div>
   </section>
 
-  <!-- ── FAQ Accordion ──────────────────────────────────────────────────────── -->
-  <section id="accordion-section" aria-labelledby="faq-heading">
+  <!-- ── 6. FAQ Accordion ──────────────────────────────────────────────────── -->
+  <section id="faq-section" aria-labelledby="faq-heading">
     <h2 id="faq-heading">❓ Frequently Asked Questions</h2>
     <div id="accordion">
       <details>
-        <summary>How do I reset my password?</summary>
-        <p>Visit the login page and click "Forgot password". A reset link will be sent to your registered email address.</p>
+        <summary>How do I operate AccessScan using only 4 keys?</summary>
+        <p>Use Right and Left arrow keys to move through interactive controls. Press Down arrow to activate a button, checkbox, or text field. Press Up arrow to return or cancel.</p>
       </details>
       <details>
-        <summary>When is the fee payment deadline?</summary>
-        <p>The fee payment deadline for the current semester is November 30th. Late fees apply after this date.</p>
+        <summary>How does text typing work without an Enter key?</summary>
+        <p>When you select an editable field with Down arrow, an on-screen keyboard appears. Navigate letters using the arrow keys and press Down arrow to select each character. Then navigate to "✓ Done" to finish.</p>
       </details>
       <details>
-        <summary>How do I access my marksheet?</summary>
-        <p>Go to Results → Download Marksheet. Results are published within 3 weeks of examinations.</p>
-      </details>
-      <details>
-        <summary>Can I change my department after admission?</summary>
-        <p>Department changes are possible within the first two semesters, subject to seat availability and academic performance.</p>
+        <summary>Are my login credentials kept safe?</summary>
+        <p>Yes. AccessScan never logs or stores plaintext passwords. Credentials utilize browser-native PasswordCredential APIs with explicit user confirmation.</p>
       </details>
     </div>
   </section>
@@ -193,36 +500,55 @@
 </main>
 
 <footer id="footer">
-  <p>AccessScan Demo Page · Built for Hackathon Accessibility Track ♿ · <a href="#form-section" style="color:#9ca3af;">Back to top ↑</a></p>
+  <p>AccessScan v2.0 · Universal Four-Key Browser Assistant · Hackathon Hands-off Track ♿</p>
 </footer>
 
 <script>
   function handleFormSubmit(e) {
     e.preventDefault();
-    const user = document.getElementById('username').value;
-    const result = document.getElementById('form-result');
-    result.textContent = user
-      ? `✅ Login successful! Welcome, ${user}.`
-      : '⚠️ Please enter your Student ID.';
-    result.classList.add('show');
-  }
-
-  function flashMessage(msg) {
-    // Show in appropriate result box based on context
-    ['action-result','card-result'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) { el.textContent = `✅ ${msg}`; el.classList.add('show'); }
-    });
-    setTimeout(() => {
-      document.querySelectorAll('.result-box').forEach(el => el.classList.remove('show'));
-    }, 3000);
+    const user = document.getElementById('username').value.trim();
+    const dept = document.getElementById('department').value;
+    const res = document.getElementById('form-result');
+    if (!user) {
+      res.textContent = '⚠️ Please enter your student username.';
+    } else {
+      res.textContent = `✅ Login processed for ${user} (${dept ? dept.toUpperCase() : 'General'})!`;
+    }
+    res.classList.add('show');
   }
 
   function handleContactSubmit(e) {
     e.preventDefault();
-    const result = document.getElementById('contact-result');
-    result.textContent = '✅ Message sent! We\'ll get back to you within 24 hours.';
-    result.classList.add('show');
+    const res = document.getElementById('contact-result');
+    res.textContent = '✅ Accessibility request submitted. Our team will review within 24 hours.';
+    res.classList.add('show');
+  }
+
+  function flashMessage(containerId, message) {
+    const el = document.getElementById(containerId);
+    if (el) {
+      el.textContent = `✅ ${message}`;
+      el.classList.add('show');
+      setTimeout(() => el.classList.remove('show'), 3500);
+    }
+  }
+
+  function ackModal() {
+    document.getElementById('announcement-modal').close();
+    flashMessage('dialog-result', 'Notice acknowledged successfully.');
+  }
+
+  let eventCount = 0;
+  function addDynamicItem() {
+    eventCount++;
+    const container = document.getElementById('dynamic-container');
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:10px 14px;background:#f1f5f9;border-radius:6px;display:flex;align-items:center;justify-content:space-between;';
+    div.innerHTML = `
+      <span style="font-size:13px;font-weight:600;">🎓 New Campus Seminar #${eventCount}</span>
+      <button class="btn btn-secondary" onclick="this.parentElement.remove();flashMessage('dialog-result','Seminar #${eventCount} booked');">Book Seat</button>
+    `;
+    container.appendChild(div);
   }
 </script>
 

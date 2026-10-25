@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "AccessScan — Universal Single-Switch Browser Assistant",
+  "name": "AccessScan — Four-Key Accessibility Assistant",
   "short_name": "AccessScan",
-  "version": "1.0.0",
-  "description": "Empowers people with motor impairments to navigate any website using a single switch, with hierarchical scanning and an integrated on-screen keyboard.",
+  "version": "2.0.0",
+  "description": "Navigate any website using only four arrow keys. Built for people with severe motor impairments.",
   "permissions": [
     "activeTab",
     "storage",
@@ -22,7 +22,9 @@
         "src/content/scanner.js",
         "src/content/highlighter.js",
         "src/content/hierarchy.js",
-        "src/content/input-handler.js",
+        "src/content/controller.js",
+        "src/content/credentials.js",
+        "src/content/overlay.js",
         "src/content/main.js"
       ],
       "css": ["src/content/content.css"],
@@ -38,7 +40,7 @@
       "48": "src/icons/icon48.png",
       "128": "src/icons/icon128.png"
     },
-    "default_title": "AccessScan"
+    "default_title": "AccessScan — Four-Key Navigator"
   },
   "icons": {
     "16": "src/icons/icon16.png",

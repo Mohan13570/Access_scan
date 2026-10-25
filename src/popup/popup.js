@@ -1,174 +1,221 @@
 /**
- * AccessScan — Popup Controller
+ * AccessScan v2.0 — Popup Controller
  *
- * Loads settings from storage, renders them into the form,
- * and saves back on submit. Also toggles the scanner on the active tab.
+ * Controls navigation start/stop, settings management,
+ * and saved credential review/deletion.
  */
 
 'use strict';
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
-const toggleEnabled   = document.getElementById('toggle-enabled');
-const statusText      = document.getElementById('status-text');
-const scanMode        = document.getElementById('scan-mode');
-const scanInterval    = document.getElementById('scan-interval');
-const intervalDisplay = document.getElementById('interval-display');
-const switchKeyInput  = document.getElementById('switch-key');
-const btnCaptureKey   = document.getElementById('btn-capture-key');
-const pauseKey        = document.getElementById('pause-key');
-const highlightColor  = document.getElementById('highlight-color');
-const borderWidth     = document.getElementById('border-width');
-const audioEnabled    = document.getElementById('audio-enabled');
-const btnSave         = document.getElementById('btn-save');
-const btnReset        = document.getElementById('btn-reset');
+// ── DOM Elements ──────────────────────────────────────────────────────────────
+const btnMainToggle    = document.getElementById('btn-main-toggle');
+const btnToggleText    = document.getElementById('btn-toggle-text');
+const toggleState      = document.getElementById('toggle-state');
+const statusIndicator  = document.getElementById('status-indicator');
+const statusMessage    = document.getElementById('status-message');
+
+const scanModeSelect   = document.getElementById('scan-mode');
+const highlightColorIn = document.getElementById('highlight-color');
+const borderWidthSelect= document.getElementById('border-width');
+const audioCheckbox    = document.getElementById('audio-enabled');
+const credCheckbox     = document.getElementById('cred-enabled');
+
+const credListEl       = document.getElementById('cred-list');
+const btnSave          = document.getElementById('btn-save');
+const btnReset         = document.getElementById('btn-reset');
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let settings = {};
-let capturedKey = ' '; // raw key value (e.g. ' ' for Space)
-let isCapturing = false;
+let currentSettings = {};
+let isNavActive = false;
 
-// ── Init ──────────────────────────────────────────────────────────────────────
+// ── Initialization ────────────────────────────────────────────────────────────
 async function init() {
-  settings = await getSettings();
-  renderSettings(settings);
-  bindEvents();
   createToast();
+  await loadSettings();
+  renderSettings();
+  await checkActiveTabStatus();
+  await loadSavedCredentials();
+  bindEvents();
 }
 
-async function getSettings() {
+async function loadSettings() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (resp) => {
-      resolve(resp?.settings ?? {});
+      currentSettings = resp?.settings ?? {
+        enabled: false,
+        scanMode: 'flat',
+        highlightColor: '#FF6B35',
+        highlightBorderWidth: 3,
+        audio: { enabled: true },
+        credentials: { enabled: true }
+      };
+      resolve();
     });
   });
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-function renderSettings(s) {
-  toggleEnabled.checked = s.enabled ?? false;
-  statusText.textContent = s.enabled ? 'On' : 'Off';
-
-  scanMode.value = s.scanMode ?? 'flat';
-
-  const interval = s.scanInterval ?? 1500;
-  scanInterval.value = interval;
-  intervalDisplay.textContent = interval;
-
-  capturedKey = s.switchKey ?? ' ';
-  switchKeyInput.value = capturedKey === ' ' ? 'Space' : capturedKey;
-
-  pauseKey.value = s.pauseKey ?? 'Escape';
-
-  highlightColor.value = s.highlightColor ?? '#FF6B35';
-  borderWidth.value = String(s.highlightBorderWidth ?? 3);
-
-  audioEnabled.checked = s.audio?.enabled ?? true;
+function renderSettings() {
+  scanModeSelect.value    = currentSettings.scanMode ?? 'flat';
+  highlightColorIn.value  = currentSettings.highlightColor ?? '#FF6B35';
+  borderWidthSelect.value = String(currentSettings.highlightBorderWidth ?? 3);
+  audioCheckbox.checked   = currentSettings.audio?.enabled ?? true;
+  credCheckbox.checked    = currentSettings.credentials?.enabled ?? true;
 }
 
-// ── Collect form values ───────────────────────────────────────────────────────
-function collectSettings() {
-  return {
-    ...settings,
-    enabled: toggleEnabled.checked,
-    scanMode: scanMode.value,
-    scanInterval: parseInt(scanInterval.value, 10),
-    switchKey: capturedKey,
-    pauseKey: pauseKey.value,
-    highlightColor: highlightColor.value,
-    highlightBorderWidth: parseInt(borderWidth.value, 10),
-    audio: {
-      ...(settings.audio ?? {}),
-      enabled: audioEnabled.checked,
-    },
-  };
+async function checkActiveTabStatus() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) {
+    updateStatusUI(false, 'No active web page found.');
+    return;
+  }
+
+  try {
+    chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }, (resp) => {
+      if (chrome.runtime.lastError || !resp) {
+        updateStatusUI(false, 'Ready — press Start on any supported webpage');
+        return;
+      }
+      isNavActive = resp.state !== 'IDLE';
+      updateStatusUI(isNavActive, isNavActive ? `Active — in ${resp.state} mode` : 'Ready — press Start');
+    });
+  } catch (_) {
+    updateStatusUI(false, 'Ready — press Start');
+  }
 }
 
-// ── Events ────────────────────────────────────────────────────────────────────
-function bindEvents() {
-  // Live interval display
-  scanInterval.addEventListener('input', () => {
-    intervalDisplay.textContent = scanInterval.value;
-    scanInterval.setAttribute('aria-valuenow', scanInterval.value);
+function updateStatusUI(active, msg) {
+  isNavActive = active;
+  if (active) {
+    btnMainToggle.classList.add('active');
+    btnToggleText.textContent = '■ Stop';
+    toggleState.textContent = 'Active (4-Arrow Control)';
+    statusIndicator.classList.add('active');
+    statusMessage.textContent = msg || 'Navigating with 4-Arrow keys';
+  } else {
+    btnMainToggle.classList.remove('active');
+    btnToggleText.textContent = '▶ Start';
+    toggleState.textContent = 'Inactive';
+    statusIndicator.classList.remove('active');
+    statusMessage.textContent = msg || 'Ready — press Start';
+  }
+}
+
+// ── Saved Credentials Review ──────────────────────────────────────────────────
+async function loadSavedCredentials() {
+  chrome.storage.local.get('as_cred_index', (res) => {
+    const creds = res['as_cred_index'] || {};
+    const entries = Object.entries(creds);
+
+    if (entries.length === 0) {
+      credListEl.innerHTML = '<p class="muted">No saved logins yet.</p>';
+      return;
+    }
+
+    credListEl.innerHTML = '';
+    entries.forEach(([origin, data]) => {
+      const item = document.createElement('div');
+      item.className = 'cred-item';
+      item.innerHTML = `
+        <div class="cred-item-info">
+          <span class="cred-origin">${escapeHtml(origin)}</span>
+          <span class="cred-user">User: ${escapeHtml(data.username || '')}</span>
+        </div>
+        <button class="btn-cred-del" data-origin="${escapeHtml(origin)}">Delete</button>
+      `;
+      credListEl.appendChild(item);
+    });
+
+    credListEl.querySelectorAll('.btn-cred-del').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        const orig = e.target.getAttribute('data-origin');
+        await deleteCredential(orig);
+        await loadSavedCredentials();
+        showToast('Credential removed');
+      });
+    });
   });
+}
 
-  // Toggle scanner immediately
-  toggleEnabled.addEventListener('change', async () => {
-    const newSettings = collectSettings();
-    settings = newSettings;
-    await saveSettings(newSettings);
-    statusText.textContent = newSettings.enabled ? 'On' : 'Off';
+async function deleteCredential(origin) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get('as_cred_index', (res) => {
+      const creds = res['as_cred_index'] || {};
+      delete creds[origin];
+      chrome.storage.local.set({ as_cred_index: creds }, resolve);
+    });
+  });
+}
 
-    // Tell content script to toggle
+// ── Bind Events ───────────────────────────────────────────────────────────────
+function bindEvents() {
+  btnMainToggle.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) {
-      chrome.tabs.sendMessage(tab.id, { type: 'TOGGLE_SCANNER' }).catch(() => {});
+    if (!tab?.id) return;
+
+    if (!isNavActive) {
+      chrome.tabs.sendMessage(tab.id, { type: 'START_SCANNER' }, () => {
+        updateStatusUI(true, 'Navigation active on page');
+      });
+    } else {
+      chrome.tabs.sendMessage(tab.id, { type: 'STOP_SCANNER' }, () => {
+        updateStatusUI(false, 'Navigation stopped');
+      });
     }
   });
 
-  // Key capture
-  btnCaptureKey.addEventListener('click', startKeyCapture);
-
-  // Save
   btnSave.addEventListener('click', async () => {
-    const newSettings = collectSettings();
-    await saveSettings(newSettings);
-    showToast('✓ Settings saved');
+    const updated = {
+      ...currentSettings,
+      scanMode: scanModeSelect.value,
+      highlightColor: highlightColorIn.value,
+      highlightBorderWidth: parseInt(borderWidthSelect.value, 10),
+      audio: { enabled: audioCheckbox.checked },
+      credentials: { enabled: credCheckbox.checked }
+    };
+
+    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: updated }, () => {
+      currentSettings = updated;
+      showToast('✓ Settings saved');
+    });
   });
 
-  // Reset
   btnReset.addEventListener('click', async () => {
-    if (!confirm('Reset all settings to defaults?')) return;
-    chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, async (resp) => {
-      // Re-trigger install defaults by clearing storage
-      await chrome.storage.sync.remove('settings');
-      // Reload popup
-      window.location.reload();
+    const defaultSettings = {
+      enabled: false,
+      scanMode: 'flat',
+      highlightColor: '#FF6B35',
+      highlightBorderWidth: 3,
+      audio: { enabled: true },
+      credentials: { enabled: true }
+    };
+
+    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: defaultSettings }, () => {
+      currentSettings = defaultSettings;
+      renderSettings();
+      showToast('Defaults restored');
     });
   });
 }
 
-// ── Key Capture ───────────────────────────────────────────────────────────────
-function startKeyCapture() {
-  isCapturing = true;
-  btnCaptureKey.textContent = 'Listening…';
-  btnCaptureKey.classList.add('listening');
-  switchKeyInput.value = '…';
-  switchKeyInput.focus();
-
-  const onKey = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    capturedKey = e.key;
-    switchKeyInput.value = e.key === ' ' ? 'Space' : e.key;
-    isCapturing = false;
-    btnCaptureKey.textContent = 'Change';
-    btnCaptureKey.classList.remove('listening');
-    document.removeEventListener('keydown', onKey, true);
-  };
-
-  document.addEventListener('keydown', onKey, true);
-}
-
-// ── Storage ───────────────────────────────────────────────────────────────────
-async function saveSettings(newSettings) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: newSettings }, resolve);
-  });
-}
-
-// ── Toast ─────────────────────────────────────────────────────────────────────
 function createToast() {
-  const toast = document.createElement('div');
-  toast.id = 'toast';
-  document.body.appendChild(toast);
+  if (document.getElementById('toast')) return;
+  const t = document.createElement('div');
+  t.id = 'toast';
+  document.body.appendChild(t);
 }
 
-function showToast(msg) {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 2000);
+function showToast(text) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = text;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-init();
+function escapeHtml(str) {
+  return str.replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[m]));
+}
+
+document.addEventListener('DOMContentLoaded', init);
