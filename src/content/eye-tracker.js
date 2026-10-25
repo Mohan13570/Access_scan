@@ -24,7 +24,7 @@ class EyeTracker {
 
     // Configuration
     this.config = {
-      gestureMode: options.gestureMode || 'auto',
+      gestureMode: options.gestureMode || 'single-blink',  // Default to single-blink (most reliable)
       earThreshold: typeof options.earThreshold === 'number' ? options.earThreshold : 0.22,
       normalBlinkMaxMs: options.normalBlinkMaxMs ?? 200,        // <200ms = normal blink -> NO ACTION
       deliberateLongBlinkMinMs: options.deliberateLongBlinkMinMs ?? 220, // 220ms - 950ms = deliberate long blink -> SELECT
@@ -32,8 +32,8 @@ class EyeTracker {
       doubleBlinkWindowMs: options.doubleBlinkWindowMs ?? 550,     // Two blinks within 550ms -> BACK / CANCEL
       holdClosedEmergencyMs: 1200,  // >1200ms held closed -> PAUSE / EMERGENCY MENU
       longBlinkDurationMs: options.longBlinkDurationMs ?? 500,
-      minBlinkDurationMs: options.minBlinkDurationMs ?? 70,
-      maxBlinkDurationMs: options.maxBlinkDurationMs ?? 600,
+      minBlinkDurationMs: options.minBlinkDurationMs ?? 60,     // 60ms minimum (lowered from 70)
+      maxBlinkDurationMs: options.maxBlinkDurationMs ?? 1200,   // 1200ms maximum (raised from 600)
       gazeDwellMs: 300,             // Gaze hold duration to trigger step
       gazeCooldownMs: 450,          // Cooldown between gaze steps
       refractoryPeriodMs: 600,      // Cooldown after blink trigger
@@ -90,6 +90,11 @@ class EyeTracker {
 
     this.updateConfig(options);
 
+    // Reset calibration on fresh start
+    this.baselineAperture = 0.25;
+    this._calibrationFrames = 0;
+    this._debugFrame = 0;
+
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Webcam API is not supported in this frame or context');
@@ -107,6 +112,7 @@ class EyeTracker {
           audio: false,
         });
       } catch (e1) {
+        console.warn('[AccessScan] Preferred camera constraints failed, trying universal fallback:', e1.name);
         // Universal fallback without constraints (supported on 100% of webcams)
         stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -287,10 +293,26 @@ class EyeTracker {
       this.gazeDirection = gaze;
 
       const now = Date.now();
+
+      // Debug logging every 60 frames (~1 second at 60fps)
+      if (!this._debugFrame) this._debugFrame = 0;
+      if (++this._debugFrame % 60 === 0) {
+        const state = ear < this.config.earThreshold ? '👁 CLOSED' : '👁 OPEN';
+        console.log(
+          `[AccessScan EAR] ear=${ear.toFixed(3)} baseline=${this.baselineAperture.toFixed(3)} threshold=${this.config.earThreshold} ${state} mode=${this.config.gestureMode}`
+        );
+      }
+
       // Dispatch through evaluateBlinkState to respect user's chosen gesture mode
       this.evaluateBlinkState(ear, now);
       this.evaluateGazeGestures(gaze, now);
       this.renderHUD(ear, gaze, pupilPos);
+    } else if (this.videoEl) {
+      // Log if video isn't ready yet (first 5 seconds)
+      if (!this._videoWaitLog) this._videoWaitLog = 0;
+      if (++this._videoWaitLog <= 10) {
+        console.log(`[AccessScan] Video readyState=${this.videoEl.readyState} — waiting for camera feed...`);
+      }
     }
 
     this.animFrameId = requestAnimationFrame(() => this.processLoop());
@@ -360,18 +382,24 @@ class EyeTracker {
     const activeRows = rowDarkCounts.filter((c) => c > minRowPixels).length;
     const rawRatio = activeRows / roiH;
 
-    // Adaptive Baseline Calibration: continuously track open eye baseline
-    if (!this.baselineAperture || this.baselineAperture < 0.15) {
-      this.baselineAperture = Math.max(0.24, rawRatio);
-    } else if (rawRatio > this.baselineAperture * 0.80) {
-      // Gently adapt baseline with open eyes
-      this.baselineAperture = this.baselineAperture * 0.98 + rawRatio * 0.02;
+    // Adaptive Baseline Calibration: build baseline over first 90 frames (~1.5s)
+    if (!this._calibrationFrames) this._calibrationFrames = 0;
+    if (this._calibrationFrames < 90) {
+      // Warmup: collect max rawRatio seen (i.e. eyes open)
+      this._calibrationFrames++;
+      if (rawRatio > this.baselineAperture) {
+        this.baselineAperture = rawRatio;
+      }
+    } else if (rawRatio > this.baselineAperture * 0.75) {
+      // After warmup: slowly drift baseline upward only when eyes are clearly open
+      this.baselineAperture = this.baselineAperture * 0.97 + rawRatio * 0.03;
     }
 
     // Relative aperture compared to user's open-eye baseline
-    const relativeAperture = rawRatio / Math.max(0.18, this.baselineAperture);
-    // When eyes open: relativeAperture ~ 1.0 -> ear ~ 0.28 - 0.32
-    // When eyes close: relativeAperture drops to < 0.55 -> ear drops to < 0.18
+    // When eyes open: relativeAperture ~ 1.0 → ear ~ 0.29
+    // When eyes closed: relativeAperture drops to ~0.2-0.4 → ear drops to ~0.13-0.17
+    const safeBaseline = Math.max(0.10, this.baselineAperture);
+    const relativeAperture = rawRatio / safeBaseline;
     const ear = Math.max(0.10, Math.min(0.38, relativeAperture * 0.20 + 0.09));
 
     // 3. Gaze Direction Calculation (pupil centroid displacement)
@@ -419,9 +447,15 @@ class EyeTracker {
       if (!isClosed && this.isEyesClosed) {
         this.isEyesClosed = false;
         const duration = now - this.eyesClosedStartTime;
-        if (duration >= (this.config.minBlinkDurationMs || 70) && duration <= (this.config.maxBlinkDurationMs || 650)) {
+        // Accept any deliberate blink: 60ms–1200ms (widened from 70–650)
+        const minMs = this.config.minBlinkDurationMs ?? 60;
+        const maxMs = this.config.maxBlinkDurationMs ?? 1200;
+        console.log(`[AccessScan] Blink detected: ${Math.round(duration)}ms (range ${minMs}-${maxMs}ms)`);
+        if (duration >= minMs && duration <= maxMs) {
           this.triggerSelect(duration);
           this.refractoryUntil = now + (this.config.refractoryPeriodMs || 450);
+        } else {
+          this.notifyStatus(`Blink ignored: ${Math.round(duration)}ms (too ${duration < minMs ? 'short' : 'long'})`);
         }
         return;
       }

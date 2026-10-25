@@ -53,6 +53,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // ── Camera Relay: Forward blink events from camera.html to the active web tab ──
+  if (message.action === 'RELAY_BLINK') {
+    (async () => {
+      try {
+        let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
+        let tab = tabs.find(t => t.id && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://') || t.url.startsWith('file://')));
+        if (!tab) {
+          tabs = await chrome.tabs.query({}).catch(() => []);
+          tab = tabs.find(t => t.id && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://') || t.url.startsWith('file://')));
+        }
+        if (tab?.id) {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: 'TRIGGER_SWITCH',
+            source: 'eye-relay',
+            duration: message.duration,
+          }).catch(() => {});
+          sendResponse({ ok: true, tabId: tab.id });
+        } else {
+          sendResponse({ ok: false, error: 'No active web tab' });
+        }
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
+    return true;
+  }
+
+  // Update EAR threshold on all content scripts
+  if (message.action === 'UPDATE_EAR_THRESHOLD') {
+    chrome.tabs.query({}).then(tabs => {
+      tabs.forEach(tab => {
+        if (tab.id && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
+          chrome.tabs.sendMessage(tab.id, {
+            type: 'SET_BLINK_CONFIG',
+            config: { earThreshold: message.earThreshold },
+          }).catch(() => {});
+        }
+      });
+    }).catch(() => {});
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.action === 'EYE_RELAY_STARTED') {
+    sendResponse({ ok: true });
+    return false;
+  }
+
+  if (message.action === 'EYE_RELAY_STOPPED') {
+    sendResponse({ ok: true });
+    return false;
+  }
+
   if (message.type === 'NAVIGATE_BACK') {
     const tabId = sender.tab?.id;
     if (!tabId) {

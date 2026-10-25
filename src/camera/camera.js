@@ -1,5 +1,11 @@
 /**
  * AccessScan — Camera & Permission Setup Controller
+ * 
+ * This page runs under the extension's origin (chrome-extension://...)
+ * so it has reliable camera access regardless of which website is open.
+ * 
+ * In "Active Eye Scanner" mode, it sends blink events to the service worker
+ * which relays them to the active tab's content script.
  */
 
 'use strict';
@@ -11,12 +17,16 @@ let earThreshold = 0.22;
 let isEyesClosed = false;
 let eyesClosedStartTime = 0;
 let baselineAperture = 0.25;
+let calibrationFrames = 0;
+let isRelayModeActive = false;  // When true, sends blink events to active tab
+let refractionUntil = 0;
 
 const videoEl = document.getElementById('webcam-video');
 const canvasEl = document.getElementById('overlay-canvas');
 const btnRequest = document.getElementById('btn-request-permission');
 const btnTest = document.getElementById('btn-test-trigger');
 const btnClose = document.getElementById('btn-close-tab');
+const btnRelay = document.getElementById('btn-relay-mode');
 const banner = document.getElementById('permission-banner');
 const statusTitle = document.getElementById('status-title');
 const statusSub = document.getElementById('status-sub');
@@ -26,14 +36,15 @@ const metricState = document.getElementById('metric-state');
 const metricBlinks = document.getElementById('metric-blinks');
 const sensitivitySlider = document.getElementById('sensitivity-slider');
 const sliderEarVal = document.getElementById('slider-ear-val');
+const relayStatus = document.getElementById('relay-status');
 
 // Load settings
 if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
   chrome.storage.sync.get('settings', (res) => {
     if (res?.settings?.eyeTracking?.earThreshold) {
       earThreshold = res.settings.eyeTracking.earThreshold;
-      sensitivitySlider.value = earThreshold;
-      sliderEarVal.textContent = earThreshold.toFixed(2);
+      if (sensitivitySlider) sensitivitySlider.value = earThreshold;
+      if (sliderEarVal) sliderEarVal.textContent = earThreshold.toFixed(2);
     }
   });
 }
@@ -59,9 +70,14 @@ async function startWebcam() {
     // Permission granted!
     banner.className = 'status-banner granted';
     statusTitle.textContent = 'Camera Permission: Active & Granted ✓';
-    statusSub.textContent = 'AccessScan has verified webcam access. Eye tracking is now unlocked on all websites!';
-    btnRequest.style.display = 'none';
-    noCameraMsg.style.display = 'none';
+    statusSub.textContent = 'AccessScan has verified webcam access. Eye tracking is now unlocked!';
+    if (btnRequest) btnRequest.style.display = 'none';
+    if (noCameraMsg) noCameraMsg.style.display = 'none';
+    if (btnRelay) btnRelay.style.display = 'inline-flex';
+
+    // Reset calibration for fresh start
+    calibrationFrames = 0;
+    baselineAperture = 0.25;
 
     // Start vision loop
     processCameraVision();
@@ -80,14 +96,14 @@ function processCameraVision() {
     return;
   }
 
-  const ctx = canvasEl.getContext('2d');
+  const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
   const w = canvasEl.width;
   const h = canvasEl.height;
 
   // Draw mirrored video frame to canvas
   ctx.drawImage(videoEl, 0, 0, w, h);
 
-  // Region of interest: upper 40%
+  // Region of interest: central 60% width, upper 40% height (where eyes are)
   const roiX = Math.floor(w * 0.20);
   const roiY = Math.floor(h * 0.18);
   const roiW = Math.floor(w * 0.60);
@@ -108,6 +124,7 @@ function processCameraVision() {
     sumLuma += luma;
   }
   const avgLuma = sumLuma / totalPixels;
+  // Adaptive dark threshold: adjusts to room lighting
   const darkThresh = Math.min(110, Math.max(30, minLuma + (avgLuma - minLuma) * 0.42));
 
   let totalDark = 0;
@@ -128,48 +145,82 @@ function processCameraVision() {
   const activeRows = rowDarkCounts.filter((c) => c > minRowPixels).length;
   const rawRatio = activeRows / roiH;
 
-  if (!baselineAperture || baselineAperture < 0.15) {
-    baselineAperture = Math.max(0.24, rawRatio);
-  } else if (rawRatio > baselineAperture * 0.80) {
-    baselineAperture = baselineAperture * 0.98 + rawRatio * 0.02;
+  // Baseline calibration: warm up over first 90 frames (~1.5s) collecting max open-eye ratio
+  calibrationFrames++;
+  if (calibrationFrames <= 90) {
+    if (rawRatio > baselineAperture) {
+      baselineAperture = rawRatio;
+    }
+  } else if (rawRatio > baselineAperture * 0.75) {
+    // After warmup: slowly adapt upward (open eyes only)
+    baselineAperture = baselineAperture * 0.97 + rawRatio * 0.03;
   }
 
-  const relativeAperture = rawRatio / Math.max(0.18, baselineAperture);
+  // Compute normalized EAR
+  const safeBaseline = Math.max(0.10, baselineAperture);
+  const relativeAperture = rawRatio / safeBaseline;
   const ear = Math.max(0.10, Math.min(0.38, relativeAperture * 0.20 + 0.09));
 
   // Update UI readouts
-  metricEar.textContent = ear.toFixed(2);
+  if (metricEar) metricEar.textContent = ear.toFixed(3);
 
   const isClosed = ear < earThreshold;
   const now = Date.now();
 
+  // Blink state machine
   if (isClosed && !isEyesClosed) {
     isEyesClosed = true;
     eyesClosedStartTime = now;
-    metricState.textContent = 'BLINKING';
-    metricState.className = 'metric-value blink';
+    if (metricState) { metricState.textContent = 'BLINKING'; metricState.className = 'metric-value blink'; }
   } else if (!isClosed && isEyesClosed) {
     isEyesClosed = false;
     const dur = now - eyesClosedStartTime;
-    if (dur >= 80 && dur <= 750) {
+
+    // Accept blinks: 60ms–1200ms
+    if (dur >= 60 && dur <= 1200 && now > refractionUntil) {
+      refractionUntil = now + 600;
       blinkCount++;
-      metricBlinks.textContent = blinkCount;
-      metricState.textContent = 'SELECT! ✓';
-      metricState.className = 'metric-value success';
+      if (metricBlinks) metricBlinks.textContent = blinkCount;
+      if (metricState) { metricState.textContent = 'SELECT! ✓'; metricState.className = 'metric-value success'; }
       playChime();
+
+      // Relay blink to active tab if relay mode is enabled
+      if (isRelayModeActive) {
+        sendBlinkToActiveTab(dur);
+      }
+
       setTimeout(() => {
-        if (!isEyesClosed) {
+        if (!isEyesClosed && metricState) {
           metricState.textContent = 'OPEN';
           metricState.className = 'metric-value';
         }
       }, 500);
     } else {
-      metricState.textContent = 'OPEN';
-      metricState.className = 'metric-value';
+      if (metricState) {
+        metricState.textContent = 'OPEN';
+        metricState.className = 'metric-value';
+      }
     }
   }
 
   animFrameId = requestAnimationFrame(processCameraVision);
+}
+
+// Send blink event to the active tab via service worker
+function sendBlinkToActiveTab(duration) {
+  try {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      chrome.runtime.sendMessage({
+        action: 'RELAY_BLINK',
+        duration: duration,
+        ear: parseFloat(metricEar?.textContent || '0.20'),
+      }).catch(() => {});
+    }
+  } catch (_) {}
+  if (relayStatus) {
+    relayStatus.textContent = `✓ Blink relayed (${Math.round(duration)}ms)`;
+    setTimeout(() => { if (relayStatus) relayStatus.textContent = '👁️ Eye scanner active — watching for blinks'; }, 1500);
+  }
 }
 
 // Audio chime
@@ -193,39 +244,59 @@ function playChime() {
 }
 
 // Sensitivity slider
-sensitivitySlider.addEventListener('input', (e) => {
+sensitivitySlider?.addEventListener('input', (e) => {
   earThreshold = parseFloat(e.target.value);
-  sliderEarVal.textContent = earThreshold.toFixed(2);
+  if (sliderEarVal) sliderEarVal.textContent = earThreshold.toFixed(2);
   if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
     chrome.storage.sync.get('settings', (res) => {
       const cur = res?.settings || {};
       cur.eyeTracking = { ...(cur.eyeTracking || {}), earThreshold };
       chrome.storage.sync.set({ settings: cur });
+      // Also update content script immediately
+      chrome.runtime.sendMessage({ action: 'UPDATE_EAR_THRESHOLD', earThreshold }).catch(() => {});
     });
   }
 });
 
-btnRequest.addEventListener('click', startWebcam);
+// Relay mode toggle button
+btnRelay?.addEventListener('click', () => {
+  isRelayModeActive = !isRelayModeActive;
+  btnRelay.textContent = isRelayModeActive ? '🔴 Stop Eye Scanner Relay' : '👁️ Start Eye Scanner (Relay to Tab)';
+  btnRelay.style.background = isRelayModeActive ? '#dc2626' : '#0284c7';
+  if (relayStatus) {
+    relayStatus.style.display = isRelayModeActive ? 'block' : 'none';
+    relayStatus.textContent = isRelayModeActive ? '👁️ Eye scanner active — watching for blinks' : '';
+  }
+  if (isRelayModeActive) {
+    // Notify the active tab that blink relay is starting
+    chrome.runtime?.sendMessage({ action: 'EYE_RELAY_STARTED' }).catch(() => {});
+  } else {
+    chrome.runtime?.sendMessage({ action: 'EYE_RELAY_STOPPED' }).catch(() => {});
+  }
+});
 
-btnTest.addEventListener('click', () => {
+btnRequest?.addEventListener('click', startWebcam);
+
+btnTest?.addEventListener('click', () => {
   blinkCount++;
-  metricBlinks.textContent = blinkCount;
-  metricState.textContent = 'SIMULATED! ✓';
-  metricState.className = 'metric-value success';
+  if (metricBlinks) metricBlinks.textContent = blinkCount;
+  if (metricState) { metricState.textContent = 'SIMULATED! ✓'; metricState.className = 'metric-value success'; }
   playChime();
+  if (isRelayModeActive) sendBlinkToActiveTab(200);
   setTimeout(() => {
-    metricState.textContent = 'OPEN';
-    metricState.className = 'metric-value';
+    if (metricState) { metricState.textContent = 'OPEN'; metricState.className = 'metric-value'; }
   }, 600);
 });
 
-btnClose.addEventListener('click', () => {
+btnClose?.addEventListener('click', () => {
   window.close();
 });
 
-// Auto-request if opened directly by user
+// Auto-request if camera permission is already granted
 window.addEventListener('DOMContentLoaded', () => {
-  // Check if camera permission is already granted
+  if (btnRelay) btnRelay.style.display = 'none';
+  if (relayStatus) relayStatus.style.display = 'none';
+
   if (navigator.permissions && navigator.permissions.query) {
     navigator.permissions.query({ name: 'camera' }).then((status) => {
       if (status.state === 'granted') {
