@@ -145,6 +145,38 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
         sendResponse({ ok: true, scanSpeed: interval });
         return false;
       }
+      if (msg.type === 'START_EYE_TRACKER') {
+        if (_singleSwitch) {
+          _singleSwitch.updateConfig({ eyeTrackingEnabled: true, ...msg.options });
+        }
+        sendResponse({ ok: true });
+        return false;
+      }
+      if (msg.type === 'STOP_EYE_TRACKER') {
+        if (_singleSwitch) {
+          _singleSwitch.updateConfig({ eyeTrackingEnabled: false });
+        }
+        sendResponse({ ok: true });
+        return false;
+      }
+      if (msg.type === 'SET_BLINK_CONFIG') {
+        _settings = _settings || getDefaultSettings();
+        _settings.eyeTracking = { ...(_settings.eyeTracking || {}), ...msg.config };
+        if (_singleSwitch) {
+          _singleSwitch.updateConfig({
+            blinkGesture: msg.config?.gestureMode,
+            earThreshold: msg.config?.earThreshold,
+            showMiniPreview: msg.config?.showMiniPreview,
+          });
+        }
+        try {
+          if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+            chrome.storage.sync.set({ settings: _settings }).catch(() => {});
+          }
+        } catch (_) {}
+        sendResponse({ ok: true });
+        return false;
+      }
       if (msg.type === 'GET_STATUS' || msg.action === 'GET_STATUS') {
         sendResponse({
           ok: true,
@@ -156,6 +188,11 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
           isScanning: _singleSwitch ? _singleSwitch.isScanning : false,
           isPaused: _singleSwitch ? _singleSwitch.isPaused : false,
           scanSpeed: _settings?.scanSpeed || 1500,
+          eyeTracking: {
+            isActive: _singleSwitch?.eyeTracker ? _singleSwitch.eyeTracker.isActive : false,
+            gestureMode: _settings?.eyeTracking?.gestureMode || 'single-blink',
+            earThreshold: _settings?.eyeTracking?.earThreshold ?? 0.22,
+          },
         });
         return false;
       }
@@ -176,13 +213,17 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
               applyInputMode();
             } else if (prevMode !== _settings.inputMode) {
               applyInputMode();
-            } else if (_settings.inputMode === '1key') {
+            } else if (_settings.inputMode === '1key' || _settings.inputMode === 'eye') {
               if (_singleSwitch) {
                 _singleSwitch.updateConfig({
                   scanSpeed: _settings.scanSpeed,
                   hierarchicalMode: _settings.scanMode === 'hierarchical',
                   audioEnabled: _settings?.audio?.enabled !== false,
                   speechEnabled: _settings?.speechEnabled !== false,
+                  eyeTrackingEnabled: _settings.inputMode === 'eye' || _settings?.eyeTracking?.enabled === true,
+                  blinkGesture: _settings?.eyeTracking?.gestureMode || 'single-blink',
+                  earThreshold: _settings?.eyeTracking?.earThreshold ?? 0.22,
+                  showMiniPreview: _settings?.eyeTracking?.showMiniPreview !== false,
                 });
               }
             } else {
@@ -275,7 +316,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
         const res = await chrome.storage.sync.get('settings');
         if (res?.settings) {
           const s = { ...defaults, ...res.settings };
-          if (s.inputMode !== '1key' && s.inputMode !== '4key') {
+          if (s.inputMode !== '1key' && s.inputMode !== '4key' && s.inputMode !== 'eye') {
             s.inputMode = '4key';
           }
           if (typeof s.scanSpeed !== 'number' || isNaN(s.scanSpeed)) {
@@ -291,14 +332,20 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   function getDefaultSettings() {
     return {
       enabled: true,
-      inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch)
-      scanSpeed: 1500, // Interval in ms for 1-key single switch auto-scan
+      inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch) | 'eye' (Eye Blink Scanner)
+      scanSpeed: 1500, // Interval in ms for 1-key/eye auto-scan
       speechEnabled: true, // Voice synthesis readout
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
       audio: { enabled: true },
       credentials: { enabled: true },
+      eyeTracking: {
+        enabled: false,
+        gestureMode: 'single-blink', // 'single-blink' | 'double-blink' | 'long-blink'
+        earThreshold: 0.22,
+        showMiniPreview: true,
+      },
     };
   }
 
@@ -321,7 +368,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     }, 200);
   }
 
-  // ── Input Mode Dispatcher (1-Key vs 4-Key) ──────────────────────────────────
+  // ── Input Mode Dispatcher (4-Key vs 1-Key vs Eye-Blink) ─────────────────────
   function applyInputMode() {
     const isEnabled = _settings?.enabled !== false;
     const mode = _settings?.inputMode || '4key';
@@ -332,7 +379,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       return;
     }
 
-    if (mode === '1key') {
+    if (mode === '1key' || mode === 'eye') {
       // Tear down 4-key navigation & overlay
       if (_controller) {
         _controller.detach();
@@ -344,13 +391,18 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       }
       _state = NavState.DISABLED;
 
-      // Start 1-key single switch scanning
+      // Start auto-scanning (with Spacebar switch and/or Eye-Blink detection)
       if (_singleSwitch) {
+        const isEye = mode === 'eye' || _settings?.eyeTracking?.enabled === true;
         _singleSwitch.start({
           scanSpeed: _settings?.scanSpeed || 1500,
           hierarchicalMode: _settings?.scanMode === 'hierarchical',
           audioEnabled: _settings?.audio?.enabled !== false,
           speechEnabled: _settings?.speechEnabled !== false,
+          eyeTrackingEnabled: isEye,
+          blinkGesture: _settings?.eyeTracking?.gestureMode || 'single-blink',
+          earThreshold: _settings?.eyeTracking?.earThreshold ?? 0.22,
+          showMiniPreview: _settings?.eyeTracking?.showMiniPreview !== false,
         });
       }
     } else {
