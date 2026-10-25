@@ -15,55 +15,107 @@
         <span id="brand-icon">♿</span>
         <div>
           <h1>AccessScan</h1>
-          <p id="brand-sub">Four-Key Accessibility Navigator</p>
+          <p id="brand-sub">Universal 1-Key &amp; 4-Key Assistant</p>
         </div>
-        <span id="version-badge">v2.0</span>
+        <span id="version-badge">v2.1</span>
       </div>
     </header>
 
-    <!-- Big toggle -->
+    <!-- Master Activation Toggle -->
     <section id="toggle-section">
       <div id="toggle-row">
         <div id="toggle-info">
-          <span id="toggle-label">Accessibility Mode</span>
-          <span id="toggle-state">Inactive</span>
+          <span id="toggle-label">Accessibility Assistant</span>
+          <span id="toggle-state">Active</span>
         </div>
-        <button id="btn-main-toggle" aria-label="Start or stop AccessScan" class="big-toggle">
-          <span id="btn-toggle-text">▶ Start</span>
+        <button id="btn-main-toggle" aria-label="Start or pause AccessScan" class="big-toggle">
+          <span id="btn-toggle-text">⏸ Active</span>
         </button>
       </div>
       <div id="status-bar">
         <span id="status-indicator"></span>
-        <span id="status-message">Ready — open any webpage and click Start</span>
+        <span id="status-message">Active across supported websites</span>
       </div>
     </section>
 
-    <!-- Key guide -->
-    <section id="key-guide" aria-labelledby="key-guide-heading">
-      <h2 id="key-guide-heading">Key Controls</h2>
+    <!-- Mode Selector: 4-Key Arrow vs 1-Key Single Switch -->
+    <section id="mode-selector-section">
+      <div class="section-title">INTERACTION MODEL</div>
+      <div class="mode-pill-group" role="radiogroup" aria-label="Assistive mode">
+        <button type="button" id="mode-btn-4key" class="mode-pill active" role="radio" aria-checked="true">
+          <span class="mode-icon">⌨️</span>
+          <span class="mode-title">4-Key Arrow Nav</span>
+          <span class="mode-desc">Right / Left / Down / Up</span>
+        </button>
+        <button type="button" id="mode-btn-1key" class="mode-pill" role="radio" aria-checked="false">
+          <span class="mode-icon">🔘</span>
+          <span class="mode-title">1-Key Single Switch</span>
+          <span class="mode-desc">Spacebar Auto-Scanner</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 4-Key Arrow Guide -->
+    <section id="key-guide-4key" class="guide-panel" aria-labelledby="key-guide-4key-heading">
+      <h2 id="key-guide-4key-heading">4-Key Arrow Controls</h2>
       <div id="key-grid">
         <div class="key-row">
           <kbd>▶</kbd><span>Next element</span>
           <kbd>◀</kbd><span>Previous element</span>
         </div>
         <div class="key-row">
-          <kbd>▼</kbd><span>Activate / Enter</span>
-          <kbd>▲</kbd><span>Back / Stop</span>
+          <kbd>▼</kbd><span>Activate / Type</span>
+          <kbd>▲</kbd><span>Browser Back / Up</span>
         </div>
       </div>
-      <p class="key-note">No mouse, Enter, or Space required.</p>
+      <p class="key-note">Operate any website using only the 4 physical arrow keys.</p>
+    </section>
+
+    <!-- 1-Key Single-Switch Guide & Quick Triggers -->
+    <section id="key-guide-1key" class="guide-panel" aria-labelledby="key-guide-1key-heading" style="display: none;">
+      <h2 id="key-guide-1key-heading">1-Key Single-Switch Controls</h2>
+      <div class="switch-guide-grid">
+        <div class="switch-row"><kbd>SPACE</kbd><span>Switch Trigger (Select / Enter / Type)</span></div>
+        <div class="switch-row"><kbd>P</kbd><span>Pause / Resume Auto-Scan</span></div>
+        <div class="switch-row"><kbd>ESC</kbd><span>Exit Keyboard / Back to Group</span></div>
+      </div>
+      <div class="switch-actions-row">
+        <button type="button" id="btn-trigger-switch" class="btn-action btn-switch-trigger">⚡ Trigger Switch</button>
+        <button type="button" id="btn-toggle-scan" class="btn-action btn-scan-pause">⏸ Pause Scan</button>
+      </div>
     </section>
 
     <hr />
 
-    <!-- Settings -->
+    <!-- Settings Section -->
     <section id="settings-section" aria-labelledby="settings-heading">
       <h2 id="settings-heading">Settings</h2>
 
-      <label for="scan-mode">Navigation mode</label>
+      <!-- 1-Key Specific: Scan Speed Controls -->
+      <div id="single-switch-settings" style="display: none;">
+        <div class="setting-label-row">
+          <label for="scan-speed-slider">Scan Step Speed</label>
+          <span id="speed-val-badge">1.5s</span>
+        </div>
+        <input type="range" id="scan-speed-slider" min="400" max="3500" step="100" value="1500" />
+        <div class="speed-presets">
+          <button type="button" class="preset-btn" data-speed="800">0.8s (Fast)</button>
+          <button type="button" class="preset-btn active" data-speed="1500">1.5s (Normal)</button>
+          <button type="button" class="preset-btn" data-speed="2000">2.0s (Relaxed)</button>
+          <button type="button" class="preset-btn" data-speed="2800">2.8s (Slow)</button>
+        </div>
+
+        <label class="checkbox-label" style="margin-top: 10px;">
+          <input type="checkbox" id="speech-enabled" checked />
+          Speak element labels aloud (TTS Voice)
+        </label>
+      </div>
+
+      <!-- General Navigation Options -->
+      <label for="scan-mode" style="margin-top: 10px;">Navigation hierarchy</label>
       <select id="scan-mode">
-        <option value="flat">Flat — all elements in order</option>
-        <option value="hierarchical">Hierarchical — sections first</option>
+        <option value="flat">Flat — all elements in linear sequence</option>
+        <option value="hierarchical">Hierarchical — scan sections first</option>
       </select>
 
       <label for="highlight-color">Highlight colour</label>
@@ -78,12 +130,12 @@
 
       <label class="checkbox-label">
         <input type="checkbox" id="audio-enabled" checked />
-        Audio feedback
+        Auditory synthesizer cues (beeps)
       </label>
 
       <label class="checkbox-label">
         <input type="checkbox" id="cred-enabled" checked />
-        Save login usernames (secure)
+        Save login usernames (secure autofill)
       </label>
     </section>
 
@@ -102,11 +154,11 @@
     <!-- Actions -->
     <section id="actions">
       <button id="btn-save" class="btn-primary">Save Settings</button>
-      <button id="btn-reset" class="btn-ghost">Reset</button>
+      <button id="btn-reset" class="btn-ghost">Reset Defaults</button>
     </section>
 
     <footer>
-      <p>Hands-off Accessibility Track ♿ · MIT License</p>
+      <p>Universal Accessibility Assistant ♿ · MIT License</p>
     </footer>
 
   </div>

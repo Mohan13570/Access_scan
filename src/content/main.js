@@ -60,6 +60,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   let _overlay = null;          // OverlayPanel
   let _credMgr = null;          // CredentialManager
   let _hierarchyMgr = null;     // HierarchyManager
+  let _singleSwitch = null;     // SingleSwitchScanner (1-Key Mode)
   let _oskIframe = null;
   let _selectDialog = null;
 
@@ -92,36 +93,65 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     // Instantiate modules
     _overlay = new window.AccessScan.OverlayPanel();
     _credMgr = new window.AccessScan.CredentialManager();
+    if (window.AccessScan.SingleSwitchScanner) {
+      _singleSwitch = new window.AccessScan.SingleSwitchScanner();
+    }
 
     // Message listener for popup & service worker
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg.type === 'SETTINGS_UPDATED') {
         _settings = msg.settings;
-        if (_settings?.enabled && _state === NavState.DISABLED) {
-          startNav();
-        } else if (!_settings?.enabled && _state !== NavState.DISABLED) {
-          stopNav(false);
-        }
+        applyInputMode();
         sendResponse({ ok: true });
         return false;
       }
-      if (msg.type === 'TOGGLE_SCANNER') {
+      if (msg.type === 'TOGGLE_SCANNER' || msg.action === 'TOGGLE_SCAN' || msg.type === 'TOGGLE_SCAN') {
         toggleAccessScan();
-        sendResponse({ ok: true });
+        sendResponse({
+          ok: true,
+          isPaused: _settings?.inputMode === '1key' ? _singleSwitch?.isPaused : _state === NavState.DISABLED,
+        });
         return false;
       }
       if (msg.type === 'START_SCANNER') {
-        if (_state === NavState.DISABLED) startNav();
+        if (_settings) _settings.enabled = true;
+        applyInputMode();
         sendResponse({ ok: true });
         return false;
       }
       if (msg.type === 'STOP_SCANNER') {
-        if (_state !== NavState.DISABLED) stopNav(true);
+        if (_settings) _settings.enabled = false;
+        applyInputMode();
         sendResponse({ ok: true });
         return false;
       }
-      if (msg.type === 'GET_STATUS') {
-        sendResponse({ state: _state, index: _flatIndex, total: _flatElements.length });
+      if (msg.type === 'TRIGGER_SWITCH' || msg.action === 'TRIGGER_SWITCH') {
+        if (_singleSwitch) {
+          _singleSwitch.handleSwitchTrigger();
+        }
+        sendResponse({ ok: true });
+        return false;
+      }
+      if (msg.type === 'SET_SPEED' || msg.action === 'SET_SPEED') {
+        const interval = msg.interval || msg.scanSpeed || 1500;
+        _settings = _settings || getDefaultSettings();
+        _settings.scanSpeed = interval;
+        if (_singleSwitch) _singleSwitch.setSpeed(interval);
+        sendResponse({ ok: true, scanSpeed: interval });
+        return false;
+      }
+      if (msg.type === 'GET_STATUS' || msg.action === 'GET_STATUS') {
+        sendResponse({
+          ok: true,
+          enabled: _settings?.enabled !== false,
+          inputMode: _settings?.inputMode || '4key',
+          state: _state,
+          index: _flatIndex,
+          total: _flatElements.length,
+          isScanning: _singleSwitch ? _singleSwitch.isScanning : false,
+          isPaused: _singleSwitch ? _singleSwitch.isPaused : false,
+          scanSpeed: _settings?.scanSpeed || 1500,
+        });
         return false;
       }
       return false;
@@ -132,13 +162,26 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
       if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
         chrome.storage.onChanged.addListener((changes, area) => {
           if (area === 'sync' && changes.settings?.newValue) {
+            const prevMode = _settings?.inputMode;
+            const prevEnabled = _settings?.enabled;
             _settings = changes.settings.newValue;
-            if (_settings.enabled && _state === NavState.DISABLED) {
-              startNav();
-            } else if (!_settings.enabled && _state !== NavState.DISABLED) {
-              stopNav(false);
-            } else if (_settings.enabled) {
-              refreshElements();
+            if (!_settings.enabled) {
+              applyInputMode();
+            } else if (prevEnabled === false && _settings.enabled) {
+              applyInputMode();
+            } else if (prevMode !== _settings.inputMode) {
+              applyInputMode();
+            } else if (_settings.inputMode === '1key') {
+              if (_singleSwitch) {
+                _singleSwitch.updateConfig({
+                  scanSpeed: _settings.scanSpeed,
+                  hierarchicalMode: _settings.scanMode === 'hierarchical',
+                  audioEnabled: _settings?.audio?.enabled !== false,
+                  speechEnabled: _settings?.speechEnabled !== false,
+                });
+              }
+            } else {
+              refreshElements(true);
               highlightCurrent();
             }
           }
@@ -211,7 +254,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 
     // Automatic activation if user has AccessScan enabled (default: true)
     if (_settings?.enabled !== false) {
-      startNav();
+      applyInputMode();
     }
 
     // Check autofill opportunity
@@ -233,6 +276,9 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   function getDefaultSettings() {
     return {
       enabled: true,
+      inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch)
+      scanSpeed: 1500, // Interval in ms for 1-key single switch auto-scan
+      speechEnabled: true, // Voice synthesis readout
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
@@ -260,13 +306,69 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
     }, 200);
   }
 
+  // ── Input Mode Dispatcher (1-Key vs 4-Key) ──────────────────────────────────
+  function applyInputMode() {
+    const isEnabled = _settings?.enabled !== false;
+    const mode = _settings?.inputMode || '4key';
+
+    if (!isEnabled) {
+      if (_singleSwitch) _singleSwitch.stop();
+      stopNav(false);
+      return;
+    }
+
+    if (mode === '1key') {
+      // Tear down 4-key navigation & overlay
+      if (_controller) {
+        _controller.detach();
+        _controller = null;
+      }
+      if (_overlay) _overlay.unmount();
+      if (window.AccessScan.Highlighter?.clearHighlight) {
+        window.AccessScan.Highlighter.clearHighlight();
+      }
+      _state = NavState.DISABLED;
+
+      // Start 1-key single switch scanning
+      if (_singleSwitch) {
+        _singleSwitch.start({
+          scanSpeed: _settings?.scanSpeed || 1500,
+          hierarchicalMode: _settings?.scanMode === 'hierarchical',
+          audioEnabled: _settings?.audio?.enabled !== false,
+          speechEnabled: _settings?.speechEnabled !== false,
+        });
+      }
+    } else {
+      // Tear down 1-key single switch scanning
+      if (_singleSwitch) _singleSwitch.stop();
+
+      // Start 4-key navigation
+      startNav();
+    }
+  }
+
   // ── Start / Stop ────────────────────────────────────────────────────────────
   function toggleAccessScan() {
+    if (_settings?.inputMode === '1key') {
+      if (_singleSwitch) {
+        if (!_singleSwitch.isScanning) {
+          applyInputMode();
+        } else {
+          _singleSwitch.togglePause();
+        }
+      }
+      return;
+    }
     if (_state === NavState.DISABLED) startNav();
     else stopNav(true);
   }
 
   function startNav() {
+    if (_settings?.inputMode === '1key') {
+      applyInputMode();
+      return;
+    }
+    if (_singleSwitch) _singleSwitch.stop();
     _state = NavState.WEBSITE_NAVIGATION;
     _settings = _settings || getDefaultSettings();
     _settings.enabled = true;
@@ -309,6 +411,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
 
   function stopNav(persistDisabled = true) {
     _state = NavState.DISABLED;
+    if (_singleSwitch) _singleSwitch.stop();
     if (persistDisabled && _settings) {
       _settings.enabled = false;
       try {

@@ -420,3 +420,176 @@ footer p {
   z-index: 9999;
 }
 #toast.show { opacity: 1; }
+
+/* ── Mode Selector Section ─────────────────────────────────────────────────── */
+#mode-selector-section {
+  padding: 12px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-title {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.mode-pill-group {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-pill {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px;
+  border-radius: var(--radius);
+  background: var(--surface2);
+  border: 1.5px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+}
+
+.mode-pill:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.mode-pill.active {
+  background: rgba(255, 107, 53, 0.12);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(255, 107, 53, 0.2);
+}
+
+.mode-pill .mode-icon {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.mode-pill .mode-title {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mode-pill .mode-desc {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.mode-pill.active .mode-desc {
+  color: #ffaa80;
+}
+
+/* ── 1-Key Single-Switch Controls ──────────────────────────────────────────── */
+.switch-guide-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.switch-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.btn-action {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.btn-switch-trigger {
+  background: #b45309;
+  color: #ffffff;
+}
+
+.btn-switch-trigger:hover {
+  background: #d97706;
+}
+
+.btn-scan-pause {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.btn-scan-pause:hover {
+  background: var(--border);
+}
+
+/* ── Speed Controls ────────────────────────────────────────────────────────── */
+.setting-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+#speed-val-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(255, 107, 53, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+#scan-speed-slider {
+  width: 100%;
+  margin: 6px 0 8px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.speed-presets {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.preset-btn {
+  flex: 1;
+  padding: 5px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.preset-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}

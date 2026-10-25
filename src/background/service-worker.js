@@ -11,6 +11,9 @@
 
 const DEFAULT_SETTINGS = {
   enabled: true, // Automatically active across supported websites
+  inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch)
+  scanSpeed: 1500, // Interval in ms for 1-key single switch auto-scan
+  speechEnabled: true, // Voice synthesis readout
   scanMode: 'flat', // 'flat' | 'hierarchical'
   highlightColor: '#FF6B35',
   highlightBorderWidth: 3,
@@ -87,7 +90,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'TOGGLE_SCANNER' || message.type === 'START_SCANNER' || message.type === 'STOP_SCANNER') {
+  if (
+    message.type === 'TOGGLE_SCANNER' ||
+    message.type === 'START_SCANNER' ||
+    message.type === 'STOP_SCANNER' ||
+    message.action === 'TOGGLE_SCAN' ||
+    message.type === 'TOGGLE_SCAN' ||
+    message.action === 'TRIGGER_SWITCH' ||
+    message.type === 'TRIGGER_SWITCH' ||
+    message.action === 'SET_SPEED' ||
+    message.type === 'SET_SPEED' ||
+    message.action === 'GET_STATUS' ||
+    message.type === 'GET_STATUS'
+  ) {
     (async () => {
       try {
         let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []);
@@ -99,7 +114,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         if (tab?.id) {
           try {
-            const resp = await chrome.tabs.sendMessage(tab.id, { type: message.type });
+            const resp = await chrome.tabs.sendMessage(tab.id, message);
             sendResponse(resp || { ok: true });
           } catch (_) {
             // Dynamic injection fallback
@@ -112,13 +127,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   'src/content/highlighter.js',
                   'src/content/hierarchy.js',
                   'src/content/controller.js',
+                  'src/content/single-switch.js',
                   'src/content/credentials.js',
                   'src/content/overlay.js',
                   'src/content/main.js'
                 ]
               });
               await new Promise(r => setTimeout(r, 120));
-              const retryResp = await chrome.tabs.sendMessage(tab.id, { type: message.type }).catch(() => ({ ok: true }));
+              const retryResp = await chrome.tabs.sendMessage(tab.id, message).catch(() => ({ ok: true }));
               sendResponse(retryResp || { ok: true });
             } catch (e) {
               sendResponse({ error: e.message });

@@ -302,3 +302,52 @@
   padding: 0 !important; margin: -1px !important; overflow: hidden !important;
   clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important;
 }
+
+/* ── Single-Switch (1-Key) Mode Reticle & UI Styles ──────────────────────────── */
+.access-scan-active-target {
+  outline: 3px solid #000000 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px #fafaf8, 0 0 0 8px #b45309, 0 0 24px rgba(180, 83, 9, 0.6) !important;
+  border-radius: 4px !important;
+  animation: accessScanPulse 1.2s infinite ease-in-out !important;
+  transition: box-shadow 0.12s ease-in-out !important;
+  z-index: 2147483640 !important;
+}
+
+.access-scan-active-section {
+  outline: 3px dashed #b45309 !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.4), 0 0 30px rgba(180, 83, 9, 0.35) !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+  z-index: 2147483639 !important;
+}
+
+@keyframes accessScanPulse {
+  0% {
+    box-shadow: 0 0 0 3px #fafaf8, 0 0 0 7px #b45309, 0 0 16px rgba(180, 83, 9, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px #fafaf8, 0 0 0 9px #d97706, 0 0 28px rgba(217, 119, 6, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 3px #fafaf8, 0 0 0 7px #b45309, 0 0 16px rgba(180, 83, 9, 0.4);
+  }
+}
+
+.access-kb-key {
+  transition: background 0.08s ease, transform 0.08s ease !important;
+}
+
+.access-kb-key.kb-active-key {
+  background: #b45309 !important;
+  color: #ffffff !important;
+  border-color: #78350f !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 0 12px rgba(180, 83, 9, 0.7) !important;
+}
+
+.access-kb-row.kb-active-row {
+  background: #fef3c7 !important;
+  border: 2.5px solid #b45309 !important;
+}
