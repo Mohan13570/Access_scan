@@ -4,7 +4,7 @@
  * Handles:
  *  - Extension install/update lifecycle
  *  - Persisting settings via chrome.storage.sync
- *  - Relaying commands between popup and active content scripts
+ *  - Relaying commands with automatic on-demand content script injection fallback
  */
 
 'use strict';
@@ -62,15 +62,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'TOGGLE_SCANNER' || message.type === 'START_SCANNER' || message.type === 'STOP_SCANNER') {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, { type: message.type })
-          .then((resp) => sendResponse(resp))
-          .catch((err) => sendResponse({ error: err.message }));
-      } else {
-        sendResponse({ error: 'No active tab' });
+    (async () => {
+      let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      let tab = tabs.find(t => t.id && !t.url?.startsWith('chrome-extension://') && !t.url?.startsWith('chrome://'));
+      if (!tab) {
+        tabs = await chrome.tabs.query({ active: true });
+        tab = tabs.find(t => t.id && !t.url?.startsWith('chrome-extension://') && !t.url?.startsWith('chrome://'));
       }
-    });
+
+      if (tab?.id) {
+        try {
+          const resp = await chrome.tabs.sendMessage(tab.id, { type: message.type });
+          sendResponse(resp);
+        } catch (_) {
+          // Dynamic injection fallback
+          try {
+            await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ['src/content/content.css'] }).catch(() => {});
+            await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              files: [
+                'src/content/scanner.js',
+                'src/content/highlighter.js',
+                'src/content/hierarchy.js',
+                'src/content/controller.js',
+                'src/content/credentials.js',
+                'src/content/overlay.js',
+                'src/content/main.js'
+              ]
+            });
+            setTimeout(async () => {
+              const retryResp = await chrome.tabs.sendMessage(tab.id, { type: message.type }).catch(() => ({ ok: true }));
+              sendResponse(retryResp);
+            }, 100);
+          } catch (e) {
+            sendResponse({ error: e.message });
+          }
+        }
+      } else {
+        sendResponse({ error: 'No active web tab found' });
+      }
+    })();
     return true;
   }
 });

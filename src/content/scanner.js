@@ -2,7 +2,7 @@
  * AccessScan v2.0 — Scanner Module
  *
  * Discovers and filters interactive elements on any webpage.
- * Avoids nested duplicates, hidden elements, and AccessScan overlays.
+ * Avoids off-screen skip links, nested duplicates, hidden elements, and AccessScan overlays.
  */
 
 'use strict';
@@ -51,27 +51,58 @@ const SECTION_SELECTORS = [
 ];
 
 /**
- * Check if element is genuinely visible and rendered.
+ * Check if element is genuinely visible and rendered in the page layout.
  * @param {Element} el
  */
 function isVisible(el) {
   if (!el || !el.isConnected) return false;
+
+  // Filter out screen-reader-only and skip links placed off-screen
+  const className = (typeof el.className === 'string') ? el.className.toLowerCase() : '';
+  if (
+    className.includes('skip-content') ||
+    className.includes('skip-link') ||
+    className.includes('screen-reader-text') ||
+    className.includes('sr-only') ||
+    className.includes('visually-hidden')
+  ) {
+    return false;
+  }
+
+  // Check hidden attributes or aria-hidden
+  if (el.hasAttribute('hidden') || el.closest('[hidden]')) {
+    return false;
+  }
+  if (el.getAttribute('aria-hidden') === 'true' || el.closest('[aria-hidden="true"]')) {
+    return false;
+  }
+
   const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return false;
+  // Filter out zero-size elements
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  // Filter out elements positioned off-screen (e.g. left: -9999px or top: -720px)
+  const scrollY = window.scrollY;
+  const scrollX = window.scrollX;
+  const absTop = rect.top + scrollY;
+  const absLeft = rect.left + scrollX;
+  if (absTop < 0 || absLeft < -50) {
+    return false;
+  }
 
   const style = window.getComputedStyle(el);
   if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
     return false;
   }
 
-  // Check if inside a closed <details> (except summary)
-  const details = el.closest('details');
-  if (details && !details.open && el.tagName !== 'SUMMARY') {
+  // Check CSS clip / clip-path hiding
+  if (style.clip && style.clip !== 'auto' && style.clip.includes('rect(1px')) {
     return false;
   }
 
-  // Check if hidden attribute is present
-  if (el.hasAttribute('hidden') || el.closest('[hidden]')) {
+  // Check if inside a closed <details> (except summary)
+  const details = el.closest('details');
+  if (details && !details.open && el.tagName !== 'SUMMARY') {
     return false;
   }
 
@@ -102,11 +133,9 @@ function isAccessScanUI(el) {
 function deduplicateNested(elements) {
   const set = new Set(elements);
   return elements.filter((el) => {
-    // If the element is an input inside a label, or button inside link, only keep the primary interactive element
     let parent = el.parentElement;
     while (parent) {
       if (set.has(parent)) {
-        // If parent is a button or link or custom role, child shouldn't be counted separately unless child is an input
         if (parent.tagName === 'BUTTON' || parent.tagName === 'A' || parent.getAttribute('role') === 'button') {
           return false;
         }
@@ -123,7 +152,6 @@ function deduplicateNested(elements) {
  * @returns {Element[]}
  */
 function collectFlatElements() {
-  // Check for open dialogs or modals
   const activeDialog = document.querySelector('dialog[open], [role="dialog"]:not([aria-hidden="true"])');
   const scope = (activeDialog && isVisible(activeDialog)) ? activeDialog : document;
 
@@ -167,7 +195,6 @@ function collectHierarchicalSections() {
     }
   }
 
-  // Gather orphaned elements not caught by section landmarks
   const orphans = Array.from(document.querySelectorAll(INTERACTIVE_SELECTORS)).filter(
     (el) => isVisible(el) && !isAccessScanUI(el) && !usedElements.has(el)
   );

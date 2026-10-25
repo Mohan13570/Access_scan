@@ -1,8 +1,9 @@
 /**
- * AccessScan — Highlighter Module
+ * AccessScan v2.0 — Highlighter Module
  *
- * Renders a floating highlight ring around the currently-scanned element.
- * Uses a positioned <div> overlay so the original DOM is unchanged.
+ * Renders a high-contrast focus ring around the currently focused control.
+ * Uses position: fixed so it is never misplaced by scroll offsets, transforms,
+ * or relative body wrappers on third-party websites.
  */
 
 'use strict';
@@ -13,11 +14,9 @@ const HIGHLIGHT_ID = 'accessscan-highlight-ring';
 const LABEL_ID = 'accessscan-element-label';
 const ANNOUNCE_ID = 'accessscan-sr-announce';
 
-/**
- * Create the highlight overlay elements once, then reuse them.
- */
+let _activeElement = null;
+
 function ensureOverlayElements() {
-  // Highlight ring
   let ring = document.getElementById(HIGHLIGHT_ID);
   if (!ring) {
     ring = document.createElement('div');
@@ -26,7 +25,6 @@ function ensureOverlayElements() {
     document.body.appendChild(ring);
   }
 
-  // Element label bubble
   let label = document.getElementById(LABEL_ID);
   if (!label) {
     label = document.createElement('div');
@@ -35,7 +33,6 @@ function ensureOverlayElements() {
     document.body.appendChild(label);
   }
 
-  // Live region for screen reader announcements
   let announce = document.getElementById(ANNOUNCE_ID);
   if (!announce) {
     announce = document.createElement('div');
@@ -50,80 +47,130 @@ function ensureOverlayElements() {
 }
 
 /**
- * Move the highlight ring to surround a given element.
- * @param {Element} el - The element to highlight
- * @param {object} settings - Current AccessScan settings
+ * Move the focus ring to surround an element.
+ * @param {Element} el
+ * @param {object} settings
  */
 function highlightElement(el, settings) {
-  if (!el) {
+  if (!el || !el.isConnected) {
     clearHighlight();
     return;
   }
 
+  _activeElement = el;
+
+  // Scroll into view so user can see it
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+
   const { ring, label, announce } = ensureOverlayElements();
   const rect = el.getBoundingClientRect();
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
   const padding = 4;
-  const borderWidth = settings?.highlightBorderWidth ?? 3;
+  const borderWidth = Math.max(3, settings?.highlightBorderWidth ?? 3);
   const color = settings?.highlightColor ?? '#FF6B35';
 
-  // Position the ring around the element
+  const top = Math.max(0, rect.top - padding);
+  const left = Math.max(0, rect.left - padding);
+  const width = Math.max(20, rect.width + padding * 2);
+  const height = Math.max(16, rect.height + padding * 2);
+
+  // Position ring with position: fixed
   ring.style.cssText = `
-    position: absolute;
-    top: ${rect.top + scrollY - padding}px;
-    left: ${rect.left + scrollX - padding}px;
-    width: ${rect.width + padding * 2}px;
-    height: ${rect.height + padding * 2}px;
-    border: ${borderWidth}px solid ${color};
-    border-radius: 4px;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.3), 0 0 12px ${color}88;
-    pointer-events: none;
-    z-index: 2147483646;
-    box-sizing: border-box;
-    transition: all 0.12s ease;
-    animation: accessscan-pulse 1.2s infinite;
+    display: block !important;
+    position: fixed !important;
+    top: ${top}px !important;
+    left: ${left}px !important;
+    width: ${width}px !important;
+    height: ${height}px !important;
+    border: ${borderWidth}px solid ${color} !important;
+    outline: 2px solid #000000 !important;
+    border-radius: 6px !important;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.6), 0 0 24px ${color} !important;
+    pointer-events: none !important;
+    z-index: 2147483647 !important;
+    box-sizing: border-box !important;
+    transition: all 0.1s ease-out !important;
+    animation: accessscan-pulse 1.2s infinite !important;
+    visibility: visible !important;
+    opacity: 1 !important;
   `;
 
-  // Derive a human-readable label for the element
+  // Derive readable name
   const elLabel = getElementLabel(el);
 
-  // Position label bubble above element (or below if not enough space)
-  const labelTop = rect.top + scrollY - padding - 28;
+  // Position label above element (or below if near top)
+  const labelTop = top > 36 ? (top - 28) : (rect.bottom + padding + 4);
   label.textContent = elLabel;
   label.style.cssText = `
-    position: absolute;
-    top: ${labelTop > scrollY + 4 ? labelTop : rect.bottom + scrollY + padding + 4}px;
-    left: ${Math.max(rect.left + scrollX - padding, scrollX + 4)}px;
-    background: ${color};
-    color: #fff;
-    padding: 2px 8px;
-    border-radius: 3px;
-    font: bold 12px/20px system-ui, sans-serif;
-    pointer-events: none;
-    z-index: 2147483647;
-    white-space: nowrap;
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    display: block !important;
+    position: fixed !important;
+    top: ${Math.max(4, labelTop)}px !important;
+    left: ${Math.max(4, left)}px !important;
+    background: ${color} !important;
+    color: #ffffff !important;
+    padding: 3px 10px !important;
+    border-radius: 4px !important;
+    font: bold 12px/20px system-ui, -apple-system, sans-serif !important;
+    pointer-events: none !important;
+    z-index: 2147483647 !important;
+    white-space: nowrap !important;
+    max-width: 320px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.6) !important;
+    visibility: visible !important;
+    opacity: 1 !important;
   `;
 
-  // Screen reader announcement
+  // Announce for screen readers
   announce.textContent = '';
   requestAnimationFrame(() => {
-    announce.textContent = `Scanning: ${elLabel}`;
+    announce.textContent = `Focused: ${elLabel}`;
   });
 }
+
+/**
+ * Reposition highlight when window scrolls or resizes.
+ */
+function updateActivePosition(settings) {
+  if (_activeElement && _activeElement.isConnected) {
+    const { ring, label } = ensureOverlayElements();
+    const rect = _activeElement.getBoundingClientRect();
+    const padding = 4;
+    const top = Math.max(0, rect.top - padding);
+    const left = Math.max(0, rect.left - padding);
+    const width = Math.max(20, rect.width + padding * 2);
+    const height = Math.max(16, rect.height + padding * 2);
+
+    ring.style.top = `${top}px`;
+    ring.style.left = `${left}px`;
+    ring.style.width = `${width}px`;
+    ring.style.height = `${height}px`;
+
+    const labelTop = top > 36 ? (top - 28) : (rect.bottom + padding + 4);
+    label.style.top = `${Math.max(4, labelTop)}px`;
+    label.style.left = `${Math.max(4, left)}px`;
+  }
+}
+
+// Attach window listeners to smoothly track active position
+window.addEventListener('scroll', () => updateActivePosition(), { passive: true });
+window.addEventListener('resize', () => updateActivePosition(), { passive: true });
 
 /**
  * Remove the highlight ring and label.
  */
 function clearHighlight() {
+  _activeElement = null;
   const ring = document.getElementById(HIGHLIGHT_ID);
   const label = document.getElementById(LABEL_ID);
-  if (ring) ring.style.cssText = 'display:none';
-  if (label) label.style.cssText = 'display:none';
+  if (ring) {
+    ring.style.display = 'none';
+    ring.style.top = '-9999px';
+  }
+  if (label) {
+    label.style.display = 'none';
+    label.style.top = '-9999px';
+  }
 }
 
 /**
@@ -133,43 +180,55 @@ function clearHighlight() {
  * @param {object} settings
  */
 function highlightSection(sectionEl, sectionLabel, settings) {
-  if (!sectionEl) return;
+  if (!sectionEl || !sectionEl.isConnected) return;
+  _activeElement = sectionEl;
+
+  sectionEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
   const { ring, label, announce } = ensureOverlayElements();
   const rect = sectionEl.getBoundingClientRect();
-  const scrollX = window.scrollX;
-  const scrollY = window.scrollY;
   const padding = 6;
-  const color = '#2563EB'; // Blue for section highlights
+  const color = '#2563EB';
+
+  const top = Math.max(0, rect.top - padding);
+  const left = Math.max(0, rect.left - padding);
+  const width = Math.max(40, rect.width + padding * 2);
+  const height = Math.max(30, rect.height + padding * 2);
 
   ring.style.cssText = `
-    position: absolute;
-    top: ${rect.top + scrollY - padding}px;
-    left: ${rect.left + scrollX - padding}px;
-    width: ${rect.width + padding * 2}px;
-    height: ${rect.height + padding * 2}px;
-    border: 3px dashed ${color};
-    border-radius: 8px;
-    box-shadow: 0 0 0 2px rgba(0,0,0,0.2), 0 0 20px ${color}66;
-    pointer-events: none;
-    z-index: 2147483646;
-    box-sizing: border-box;
-    transition: all 0.15s ease;
+    display: block !important;
+    position: fixed !important;
+    top: ${top}px !important;
+    left: ${left}px !important;
+    width: ${width}px !important;
+    height: ${height}px !important;
+    border: 3px dashed ${color} !important;
+    outline: 2px solid #000 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.5), 0 0 24px ${color}88 !important;
+    pointer-events: none !important;
+    z-index: 2147483646 !important;
+    box-sizing: border-box !important;
+    transition: all 0.12s ease !important;
+    visibility: visible !important;
   `;
 
-  label.textContent = `📌 ${sectionLabel}`;
+  label.textContent = `📌 Section: ${sectionLabel}`;
   label.style.cssText = `
-    position: absolute;
-    top: ${rect.top + scrollY - padding - 30}px;
-    left: ${Math.max(rect.left + scrollX, scrollX + 4)}px;
-    background: ${color};
-    color: #fff;
-    padding: 3px 10px;
-    border-radius: 4px;
-    font: bold 13px/22px system-ui, sans-serif;
-    pointer-events: none;
-    z-index: 2147483647;
-    white-space: nowrap;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    display: block !important;
+    position: fixed !important;
+    top: ${Math.max(4, top > 36 ? top - 30 : rect.bottom + 8)}px !important;
+    left: ${Math.max(4, left)}px !important;
+    background: ${color} !important;
+    color: #fff !important;
+    padding: 3px 12px !important;
+    border-radius: 4px !important;
+    font: bold 12px/20px system-ui, sans-serif !important;
+    pointer-events: none !important;
+    z-index: 2147483647 !important;
+    white-space: nowrap !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5) !important;
+    visibility: visible !important;
   `;
 
   announce.textContent = '';
@@ -179,8 +238,7 @@ function highlightSection(sectionEl, sectionLabel, settings) {
 }
 
 /**
- * Derive a user-friendly label for an element.
- * Priority: aria-label > aria-labelledby > placeholder > value > text content > tag description
+ * Derive user-friendly label for any element.
  * @param {Element} el
  * @returns {string}
  */
@@ -193,7 +251,6 @@ function getElementLabel(el) {
     if (ref) return ref.textContent.trim();
   }
 
-  // <label> associated via for= or wrapping
   const id = el.id;
   if (id) {
     const assocLabel = document.querySelector(`label[for="${id}"]`);
@@ -204,9 +261,8 @@ function getElementLabel(el) {
 
   if (el.getAttribute('placeholder')) return el.getAttribute('placeholder');
   if (el.value && el.tagName !== 'INPUT') return el.value;
-  if (el.textContent.trim()) return el.textContent.trim().slice(0, 60);
+  if (el.textContent.trim()) return el.textContent.trim().slice(0, 50);
 
-  // Fall back to element type description
   const TYPE_LABELS = {
     INPUT: `Input (${el.type || 'text'})`,
     BUTTON: 'Button',
@@ -223,4 +279,5 @@ window.AccessScan.Highlighter = {
   highlightSection,
   clearHighlight,
   getElementLabel,
+  updateActivePosition,
 };
