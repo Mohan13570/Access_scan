@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "AccessScan — Four-Key Accessibility Assistant",
+  "name": "AccessScan — Universal Accessibility Assistant (1-Key & 4-Key)",
   "short_name": "AccessScan",
-  "version": "2.0.0",
-  "description": "Navigate any website using only four arrow keys. Built for people with severe motor impairments.",
+  "version": "2.1.0",
+  "description": "Universal accessible browser navigation for people with severe motor impairments. Seamlessly switch between Single-Switch (1-Key) auto-scanning and Four-Key arrow navigation.",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -23,6 +24,7 @@
         "src/content/highlighter.js",
         "src/content/hierarchy.js",
         "src/content/controller.js",
+        "src/content/single-switch.js",
         "src/content/credentials.js",
         "src/content/overlay.js",
         "src/content/main.js"

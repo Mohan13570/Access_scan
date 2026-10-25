@@ -1,0 +1,205 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   AccessScan v2.0 — Virtual Keyboard Styles
+   ──────────────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:         #0d1117;
+  --surface:    #161b22;
+  --surface2:   #21262d;
+  --border:     #30363d;
+  --key-bg:     #1c2128;
+  --key-hover:  #292e36;
+  --key-active: #ff6b35;
+  --key-text:   #e6edf3;
+  --accent:     #ff6b35;
+  --green:      #3fb950;
+  --red:        #f85149;
+  --blue:       #58a6ff;
+  --preview-bg: #010409;
+  --muted:      #8b949e;
+  --radius:     6px;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  color: var(--key-text);
+  font-family: system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  user-select: none;
+  font-size: 14px;
+}
+
+#osk-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px 8px 4px;
+  gap: 4px;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────────── */
+#osk-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 2px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  flex-shrink: 0;
+}
+
+#osk-title {
+  grid-column: 1;
+  grid-row: 1;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+#osk-field-label {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#osk-preview {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  background: var(--preview-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-family: monospace;
+  font-size: 13px;
+  color: #79c0ff;
+  min-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Layout bar ─────────────────────────────────────────────────────────────── */
+#osk-layout-bar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.layout-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--key-text);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.layout-btn:hover { background: var(--key-hover); border-color: var(--accent); }
+
+#osk-row-indicator {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Key grid ───────────────────────────────────────────────────────────────── */
+#osk-keys {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.osk-row {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+  justify-content: center;
+}
+
+.osk-key {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--key-bg);
+  color: var(--key-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.08s, transform 0.05s, border-color 0.08s;
+  position: relative;
+  overflow: hidden;
+  outline: none;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+
+.osk-key:hover   { background: var(--key-hover); }
+
+/* THE ACTIVE (highlighted) KEY */
+.osk-key.active-key {
+  background: var(--accent) !important;
+  border-color: #fff !important;
+  color: #fff !important;
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px rgba(255,107,53,0.5), 0 0 16px rgba(255,107,53,0.4);
+  z-index: 2;
+}
+
+/* Special key colours */
+.key-done   { background: #1a4a2a; border-color: var(--green); color: var(--green); flex: 1.8; }
+.key-cancel { background: #3b1a1a; border-color: var(--red);   color: var(--red);   flex: 1.5; }
+.key-back   { background: var(--surface2); flex: 1.5; }
+.key-clear  { background: var(--surface2); flex: 1.5; }
+.key-shift  { background: var(--surface2); flex: 1.5; }
+.key-space  { flex: 3; }
+.key-special{ background: var(--surface2); flex: 1.5; }
+
+/* Active state overrides special colours */
+.osk-key.active-key.key-done,
+.osk-key.active-key.key-cancel { background: var(--accent) !important; color: #fff !important; }
+
+/* Ripple */
+.osk-key::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(circle, rgba(255,255,255,0.35) 0%, transparent 70%);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s;
+}
+.osk-key.ripple::after { opacity: 1; }
+
+/* ── Nav hint ───────────────────────────────────────────────────────────────── */
+#osk-nav-hint {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: center;
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+/* ── SR only ────────────────────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}

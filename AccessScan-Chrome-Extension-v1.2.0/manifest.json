@@ -1,23 +1,63 @@
 {
   "manifest_version": 3,
-  "name": "AccessScan — Universal Single-Switch Browser Assistant",
-  "version": "1.2.0",
-  "description": "Empowers people with severe motor impairments to navigate any website using a single switch, hierarchical scanning, and on-screen keyboard.",
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "AccessScan Controls"
-  },
+  "name": "AccessScan — Universal Accessibility Assistant (1-Key & 4-Key)",
+  "short_name": "AccessScan",
+  "version": "2.1.0",
+  "description": "Universal accessible browser navigation for people with severe motor impairments. Seamlessly switch between Single-Switch (1-Key) auto-scanning and Four-Key arrow navigation.",
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
-      "run_at": "document_idle"
+      "js": [
+        "src/content/scanner.js",
+        "src/content/highlighter.js",
+        "src/content/hierarchy.js",
+        "src/content/controller.js",
+        "src/content/single-switch.js",
+        "src/content/credentials.js",
+        "src/content/overlay.js",
+        "src/content/main.js"
+      ],
+      "css": ["src/content/content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "src/icons/icon16.png",
+      "32": "src/icons/icon32.png",
+      "48": "src/icons/icon48.png",
+      "128": "src/icons/icon128.png"
+    },
+    "default_title": "AccessScan — Four-Key Navigator"
+  },
+  "icons": {
+    "16": "src/icons/icon16.png",
+    "32": "src/icons/icon32.png",
+    "48": "src/icons/icon48.png",
+    "128": "src/icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/keyboard/keyboard.html",
+        "src/keyboard/keyboard.css",
+        "src/keyboard/keyboard.js"
+      ],
+      "matches": ["<all_urls>"]
     }
   ]
 }

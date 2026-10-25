@@ -1,0 +1,366 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   AccessScan v2.0 — Content Script Styles
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Focus ring pulse animations ─────────────────────────────────────────── */
+@keyframes accessscan-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.8), 0 0 16px var(--as-col, #FF6B35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(0,0,0,0.4), 0 0 30px var(--as-col, #FF6B35);
+  }
+}
+
+@keyframes as-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.8), 0 0 16px var(--as-col, #FF6B35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(0,0,0,0.4), 0 0 30px var(--as-col, #FF6B35);
+  }
+}
+
+/* ── On-page Unobtrusive Accessibility Indicator (bottom-right floating pill) ── */
+#accessscan-overlay {
+  position: fixed !important;
+  bottom: 18px !important;
+  right: 18px !important;
+  top: auto !important;
+  left: auto !important;
+  z-index: 2147483646 !important;
+  background: rgba(13, 17, 23, 0.94) !important;
+  border: 1.5px solid rgba(255, 107, 53, 0.7) !important;
+  border-radius: 20px !important;
+  padding: 0 !important;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  font-size: 12px !important;
+  color: #e6edf3 !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  overflow: hidden !important;
+  user-select: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  max-width: 380px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+#accessscan-overlay.as-compact {
+  border-radius: 20px !important;
+}
+
+#accessscan-overlay.as-expanded {
+  border-radius: 12px !important;
+  width: 280px !important;
+}
+
+#as-overlay-bar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 5px 10px !important;
+  gap: 8px !important;
+  cursor: grab !important;
+}
+
+#as-overlay-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+}
+
+#as-overlay-logo {
+  font-size: 14px !important;
+  color: #ff6b35 !important;
+}
+
+#as-overlay-input-badge {
+  background: #ff6b35 !important;
+  color: #ffffff !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  letter-spacing: 0.5px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  text-transform: uppercase !important;
+}
+
+#as-overlay-mode {
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.8px !important;
+  text-transform: uppercase !important;
+  background: #ff6b35 !important;
+  color: #fff !important;
+  padding: 2px 6px !important;
+  border-radius: 8px !important;
+  flex-shrink: 0 !important;
+}
+
+#accessscan-overlay[data-mode="keyboard"] #as-overlay-mode { background: #58a6ff !important; }
+#accessscan-overlay[data-mode="choose-option"] #as-overlay-mode { background: #3fb950 !important; }
+#accessscan-overlay[data-mode="cred-prompt"] #as-overlay-mode { background: #d29922 !important; }
+#accessscan-overlay[data-mode="back"] #as-overlay-mode { background: #8957e5 !important; }
+
+#as-overlay-element-label {
+  display: inline-block !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #79c0ff !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 160px !important;
+}
+
+#as-overlay-toggle {
+  background: transparent !important;
+  border: none !important;
+  color: #8b949e !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  padding: 2px 4px !important;
+  border-radius: 4px !important;
+  line-height: 1 !important;
+  transition: color 0.15s ease !important;
+}
+
+#as-overlay-toggle:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+#as-overlay-body {
+  display: none !important;
+  padding: 6px 10px 8px !important;
+  border-top: 1px solid #30363d !important;
+}
+
+#accessscan-overlay.as-expanded #as-overlay-body {
+  display: block !important;
+}
+
+#as-overlay-hints {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 4px !important;
+}
+
+.as-hint-chip {
+  font-size: 10px !important;
+  color: #8b949e !important;
+  background: #161b22 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  border: 1px solid #30363d !important;
+  text-align: center !important;
+}
+
+#as-overlay-status {
+  display: none !important;
+  padding: 2px 10px 4px !important;
+  font-size: 11px !important;
+  color: #3fb950 !important;
+  font-weight: 600 !important;
+}
+
+#as-overlay-status.visible {
+  display: block !important;
+}
+
+/* ── OSK iframe ──────────────────────────────────────────────────────────── */
+#accessscan-osk-iframe {
+  animation: as-slide-up 0.18s ease-out !important;
+}
+
+@keyframes as-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ── Select dialog ───────────────────────────────────────────────────────── */
+#accessscan-select-dialog {
+  position: fixed !important;
+  top: 50% !important; left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  z-index: 2147483645 !important;
+  background: #161b22 !important;
+  border: 1.5px solid #ff6b35 !important;
+  border-radius: 12px !important;
+  padding: 0 !important;
+  min-width: 290px !important;
+  max-width: 440px !important;
+  max-height: 70vh !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.85) !important;
+  font-family: system-ui,-apple-system,sans-serif !important;
+}
+
+#as-select-title {
+  padding: 14px 18px 10px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #e6edf3 !important;
+  border-bottom: 1px solid #30363d !important;
+}
+
+#as-select-list {
+  overflow-y: auto !important;
+  flex: 1 !important;
+  padding: 6px 0 !important;
+}
+
+.as-select-option {
+  padding: 11px 18px !important;
+  font-size: 13px !important;
+  color: #8b949e !important;
+  cursor: pointer !important;
+  transition: background 0.1s, color 0.1s !important;
+  border-left: 3px solid transparent !important;
+}
+
+.as-select-option.active {
+  background: rgba(255,107,53,0.18) !important;
+  color: #ff6b35 !important;
+  border-left-color: #ff6b35 !important;
+  font-weight: 700 !important;
+}
+
+#as-select-hint {
+  padding: 9px 18px !important;
+  font-size: 11px !important;
+  color: #8b949e !important;
+  border-top: 1px solid #30363d !important;
+  text-align: center !important;
+}
+
+/* ── Credential prompt ───────────────────────────────────────────────────── */
+#accessscan-cred-prompt {
+  position: fixed !important;
+  bottom: 80px !important; right: 16px !important;
+  z-index: 2147483645 !important;
+  background: #161b22 !important;
+  border: 1.5px solid #d29922 !important;
+  border-radius: 12px !important;
+  padding: 14px 16px !important;
+  min-width: 290px !important;
+  max-width: 370px !important;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.8) !important;
+  font-family: system-ui,-apple-system,sans-serif !important;
+}
+
+#as-cred-title {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #e6edf3 !important;
+  margin-bottom: 6px !important;
+}
+
+#as-cred-user {
+  font-size: 12px !important;
+  color: #8b949e !important;
+  margin-bottom: 4px !important;
+}
+
+#as-cred-note {
+  font-size: 11px !important;
+  color: #8b949e !important;
+  margin-bottom: 12px !important;
+  font-style: italic !important;
+}
+
+#as-cred-options {
+  display: flex !important;
+  gap: 8px !important;
+  margin-bottom: 10px !important;
+}
+
+.as-cred-option {
+  flex: 1 !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+  cursor: pointer !important;
+  border: 1px solid #30363d !important;
+  color: #8b949e !important;
+  background: #21262d !important;
+  transition: all 0.12s !important;
+}
+
+.as-cred-option.active {
+  border-color: #ff6b35 !important;
+  background: rgba(255,107,53,0.18) !important;
+  color: #ff6b35 !important;
+}
+
+#as-cred-hint {
+  font-size: 11px !important;
+  color: #8b949e !important;
+  text-align: center !important;
+}
+
+/* ── Screen reader only ──────────────────────────────────────────────────── */
+.sr-only {
+  position: absolute !important; width: 1px !important; height: 1px !important;
+  padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+  clip: rect(0,0,0,0) !important; white-space: nowrap !important; border: 0 !important;
+}
+
+/* ── Single-Switch (1-Key) Mode Reticle & UI Styles ──────────────────────────── */
+.access-scan-active-target {
+  outline: 3px solid #000000 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px #fafaf8, 0 0 0 8px #b45309, 0 0 24px rgba(180, 83, 9, 0.6) !important;
+  border-radius: 4px !important;
+  animation: accessScanPulse 1.2s infinite ease-in-out !important;
+  transition: box-shadow 0.12s ease-in-out !important;
+  z-index: 2147483640 !important;
+}
+
+.access-scan-active-section {
+  outline: 3px dashed #b45309 !important;
+  outline-offset: 4px !important;
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.4), 0 0 30px rgba(180, 83, 9, 0.35) !important;
+  border-radius: 6px !important;
+  transition: all 0.15s ease !important;
+  z-index: 2147483639 !important;
+}
+
+@keyframes accessScanPulse {
+  0% {
+    box-shadow: 0 0 0 3px #fafaf8, 0 0 0 7px #b45309, 0 0 16px rgba(180, 83, 9, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px #fafaf8, 0 0 0 9px #d97706, 0 0 28px rgba(217, 119, 6, 0.7);
+  }
+  100% {
+    box-shadow: 0 0 0 3px #fafaf8, 0 0 0 7px #b45309, 0 0 16px rgba(180, 83, 9, 0.4);
+  }
+}
+
+.access-kb-key {
+  transition: background 0.08s ease, transform 0.08s ease !important;
+}
+
+.access-kb-key.kb-active-key {
+  background: #b45309 !important;
+  color: #ffffff !important;
+  border-color: #78350f !important;
+  transform: scale(1.05) !important;
+  box-shadow: 0 0 12px rgba(180, 83, 9, 0.7) !important;
+}
+
+.access-kb-row.kb-active-row {
+  background: #fef3c7 !important;
+  border: 2.5px solid #b45309 !important;
+}
