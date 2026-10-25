@@ -137,6 +137,11 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
         _settings = _settings || getDefaultSettings();
         _settings.scanSpeed = interval;
         if (_singleSwitch) _singleSwitch.setSpeed(interval);
+        try {
+          if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
+            chrome.storage.sync.set({ settings: _settings }).catch(() => {});
+          }
+        } catch (_) {}
         sendResponse({ ok: true, scanSpeed: interval });
         return false;
       }
@@ -164,7 +169,7 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
           if (area === 'sync' && changes.settings?.newValue) {
             const prevMode = _settings?.inputMode;
             const prevEnabled = _settings?.enabled;
-            _settings = changes.settings.newValue;
+            _settings = { ...getDefaultSettings(), ...changes.settings.newValue };
             if (!_settings.enabled) {
               applyInputMode();
             } else if (prevEnabled === false && _settings.enabled) {
@@ -264,13 +269,23 @@ if (window.__ACCESSSCAN_INITIALIZED__) {
   }
 
   async function loadSettings() {
+    const defaults = getDefaultSettings();
     try {
       if (typeof chrome !== 'undefined' && chrome.storage?.sync) {
         const res = await chrome.storage.sync.get('settings');
-        return res?.settings ?? getDefaultSettings();
+        if (res?.settings) {
+          const s = { ...defaults, ...res.settings };
+          if (s.inputMode !== '1key' && s.inputMode !== '4key') {
+            s.inputMode = '4key';
+          }
+          if (typeof s.scanSpeed !== 'number' || isNaN(s.scanSpeed)) {
+            s.scanSpeed = 1500;
+          }
+          return s;
+        }
       }
     } catch (_) {}
-    return getDefaultSettings();
+    return defaults;
   }
 
   function getDefaultSettings() {

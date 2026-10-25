@@ -64,11 +64,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'GET_SETTINGS') {
     chrome.storage.sync.get('settings').then(({ settings }) => {
-      sendResponse({ settings: settings ?? DEFAULT_SETTINGS });
+      const merged = settings ? deepMerge(DEFAULT_SETTINGS, settings) : DEFAULT_SETTINGS;
+      if (merged.inputMode !== '1key' && merged.inputMode !== '4key') {
+        merged.inputMode = '4key';
+      }
+      sendResponse({ settings: merged });
     }).catch(() => {
       sendResponse({ settings: DEFAULT_SETTINGS });
     });
     return true;
+  }
+
+  if (message.type === 'SET_SPEED' || message.action === 'SET_SPEED') {
+    const speed = message.interval || message.scanSpeed;
+    if (speed) {
+      chrome.storage.sync.get('settings').then(({ settings = {} }) => {
+        const merged = { ...DEFAULT_SETTINGS, ...settings, scanSpeed: speed };
+        chrome.storage.sync.set({ settings: merged }).catch(() => {});
+      }).catch(() => {});
+    }
   }
 
   if (message.type === 'SAVE_SETTINGS') {

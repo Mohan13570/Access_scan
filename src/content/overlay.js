@@ -42,6 +42,7 @@ class OverlayPanel {
       <div id="as-overlay-bar">
         <div id="as-overlay-left">
           <span id="as-overlay-logo" title="AccessScan 4-Key Assistant">♿</span>
+          <span id="as-overlay-input-badge" style="background:#ff6b35;color:#ffffff;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:4px;letter-spacing:0.5px;margin-right:2px;">4-KEY NAV</span>
           <span id="as-overlay-mode" aria-label="Current mode">NAVIGATING</span>
           <span id="as-overlay-element-label" aria-label="Active element" title="Current focused control">—</span>
         </div>

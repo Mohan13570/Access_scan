@@ -114,11 +114,22 @@ async function init() {
 }
 
 async function loadSettings() {
+  const defaults = getDefaultSettings();
   try {
     const res = await chrome.storage.sync.get('settings');
-    currentSettings = res?.settings ?? getDefaultSettings();
+    if (res?.settings) {
+      currentSettings = { ...defaults, ...res.settings };
+      if (currentSettings.inputMode !== '1key' && currentSettings.inputMode !== '4key') {
+        currentSettings.inputMode = '4key';
+      }
+      if (typeof currentSettings.scanSpeed !== 'number' || isNaN(currentSettings.scanSpeed)) {
+        currentSettings.scanSpeed = 1500;
+      }
+    } else {
+      currentSettings = defaults;
+    }
   } catch (_) {
-    currentSettings = getDefaultSettings();
+    currentSettings = defaults;
   }
 }
 
@@ -179,6 +190,26 @@ function updateModeUI(mode) {
   keyGuide4Key.style.display = is1Key ? 'none' : 'block';
 
   singleSwitchSettings.style.display = is1Key ? 'block' : 'none';
+
+  // Update prominent Active Mode Banner
+  const banner = document.getElementById('active-mode-banner');
+  const bannerTitle = document.getElementById('banner-mode-title');
+  const bannerDesc = document.getElementById('banner-mode-desc');
+  const bannerIcon = document.getElementById('banner-mode-icon');
+  if (banner && bannerTitle && bannerDesc && bannerIcon) {
+    if (is1Key) {
+      banner.className = 'mode-banner mode-banner-1key';
+      bannerIcon.textContent = '🔘';
+      bannerTitle.textContent = 'ACTIVE MODE: 1-KEY SINGLE-SWITCH (SPACEBAR)';
+      const speedSec = ((currentSettings.scanSpeed || 1500) / 1000).toFixed(1);
+      bannerDesc.textContent = `Auto-scans page elements. Press Spacebar to select/type. Saved speed: ${speedSec}s across all websites.`;
+    } else {
+      banner.className = 'mode-banner mode-banner-4key';
+      bannerIcon.textContent = '⌨️';
+      bannerTitle.textContent = 'ACTIVE MODE: 4-KEY ARROW NAVIGATION';
+      bannerDesc.textContent = 'Navigate any website using only Up, Down, Left, Right arrows. Physical Enter is never required.';
+    }
+  }
 
   updateStatusUI(isNavActive);
 }
@@ -306,34 +337,60 @@ function bindEvents() {
     showToast('Switched to 1-Key Single Switch');
   });
 
-  // Speed slider
-  scanSpeedSlider.addEventListener('input', async (e) => {
+  // Speed slider (instant live feedback + debounced persistent storage)
+  let speedDebounceTimer = null;
+  scanSpeedSlider.addEventListener('input', (e) => {
     const speed = parseInt(e.target.value, 10);
     speedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
     currentSettings.scanSpeed = speed;
     updatePresetBtns(speed);
 
-    const tab = await getTargetTab();
-    if (tab?.id) {
-      sendTabMessageWithFallback(tab.id, { type: 'SET_SPEED', interval: speed });
-    }
+    // Debounced permanent save so rapid dragging doesn't flood storage
+    clearTimeout(speedDebounceTimer);
+    speedDebounceTimer = setTimeout(async () => {
+      await saveSettings(currentSettings);
+    }, 250);
+
+    // Live update to active tab immediately
+    getTargetTab().then((tab) => {
+      if (tab?.id) {
+        sendTabMessageWithFallback(tab.id, { type: 'SET_SPEED', interval: speed });
+      }
+    });
   });
 
-  // Speed presets
+  scanSpeedSlider.addEventListener('change', async (e) => {
+    clearTimeout(speedDebounceTimer);
+    const speed = parseInt(e.target.value, 10);
+    currentSettings.scanSpeed = speed;
+    await saveSettings(currentSettings);
+    showToast(`✓ Speed saved: ${(speed / 1000).toFixed(1)}s (all websites)`);
+  });
+
+  // Speed presets (immediate save to storage)
   presetBtns.forEach((btn) => {
     btn.addEventListener('click', async () => {
+      clearTimeout(speedDebounceTimer);
       const speed = parseInt(btn.getAttribute('data-speed'), 10);
       scanSpeedSlider.value = speed;
       speedValBadge.textContent = `${(speed / 1000).toFixed(1)}s`;
       currentSettings.scanSpeed = speed;
       updatePresetBtns(speed);
+      await saveSettings(currentSettings);
 
       const tab = await getTargetTab();
       if (tab?.id) {
         sendTabMessageWithFallback(tab.id, { type: 'SET_SPEED', interval: speed });
       }
-      showToast(`Speed set to ${(speed / 1000).toFixed(1)}s`);
+      showToast(`✓ Speed saved: ${(speed / 1000).toFixed(1)}s (all websites)`);
     });
+  });
+
+  // Speech TTS toggle (immediate save)
+  speechCheckbox?.addEventListener('change', async () => {
+    currentSettings.speechEnabled = speechCheckbox.checked;
+    await saveSettings(currentSettings);
+    showToast(currentSettings.speechEnabled ? 'Voice readout enabled' : 'Voice readout muted');
   });
 
   // 1-Key Manual Trigger & Pause buttons

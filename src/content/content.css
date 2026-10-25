@@ -78,6 +78,19 @@
   color: #ff6b35 !important;
 }
 
+#as-overlay-input-badge {
+  background: #ff6b35 !important;
+  color: #ffffff !important;
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  padding: 2px 6px !important;
+  border-radius: 6px !important;
+  letter-spacing: 0.5px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+  text-transform: uppercase !important;
+}
+
 #as-overlay-mode {
   font-size: 9px !important;
   font-weight: 700 !important;

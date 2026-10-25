@@ -86,6 +86,9 @@ class SingleSwitchScanner {
     if (typeof opts.audioEnabled === 'boolean') this.audioEnabled = opts.audioEnabled;
     if (typeof opts.speechEnabled === 'boolean') this.speechEnabled = opts.speechEnabled;
 
+    const speedBadge = document.getElementById('access-scan-dock-speed-badge');
+    if (speedBadge) speedBadge.textContent = `${(this.scanInterval / 1000).toFixed(1)}s`;
+
     if (this.isScanning && !this.isPaused) {
       this.resetTimer();
     }
@@ -96,7 +99,8 @@ class SingleSwitchScanner {
     if (this.isScanning && !this.isPaused) {
       this.resetTimer();
     }
-    this.updateDockReadout(`Speed: ${(this.scanInterval / 1000).toFixed(1)}s`);
+    const speedBadge = document.getElementById('access-scan-dock-speed-badge');
+    if (speedBadge) speedBadge.textContent = `${(this.scanInterval / 1000).toFixed(1)}s`;
   }
 
   resetTimer() {
@@ -253,8 +257,11 @@ class SingleSwitchScanner {
       <div style="position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:2147483645;background:#1c1917;color:#fafaf8;border:2px solid #b45309;border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,0.5);font-size:13px;user-select:none;">
         <span style="font-size:18px;">♿</span>
         <div>
-          <div style="font-size:10px;color:#d6d1c4;font-weight:bold;letter-spacing:0.5px;">ACCESS SCAN 1-KEY</div>
-          <div id="access-scan-dock-text" style="font-weight:bold;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fef3c7;">Scanning...</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
+            <span style="background:#b45309;color:#ffffff;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:4px;letter-spacing:0.5px;">1-KEY (SPACEBAR)</span>
+            <span id="access-scan-dock-speed-badge" style="background:#292524;border:1px solid #78350f;color:#fef3c7;font-size:10px;font-weight:bold;padding:1px 5px;border-radius:4px;">${(this.scanInterval / 1000).toFixed(1)}s</span>
+          </div>
+          <div id="access-scan-dock-text" style="font-weight:bold;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fef3c7;">Scanning...</div>
         </div>
         <div style="display:flex;gap:6px;">
           <button id="access-scan-switch-btn" type="button" style="background:#b45309;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;">Switch [Space]</button>
