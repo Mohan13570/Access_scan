@@ -1,16 +1,13 @@
 /**
- * AccessScan v2.2 — Eye Blink Vision Engine & Eyelid Aspect Ratio (EAR) Tracker
+ * AccessScan v2.2 — Advanced Eye Gaze & Blink Gesture Vision Engine
  *
- * Implements local computer-vision based eye tracking:
- *  - Continuous Eye Aspect Ratio (EAR) analysis via webcam feed
- *  - Configurable Blink Gestures:
- *      * Single Blink ("one blink selects") with min/max duration validation
- *      * Double Blink (two rapid blinks for zero false-positives)
- *      * Long Blink (sustained dwell closure >500ms)
- *  - Refractory cooldown to prevent accidental re-triggers
- *  - Floating Mini-Camera HUD with live eye contour & EAR aperture readout
- *  - Web Audio synthetic chime on trigger (A5 -> E6) and subtle tick on closure
- *  - Direct integration with SingleSwitchScanner.handleSwitchTrigger()
+ * Implements the exact gesture-to-action specification:
+ *  - Normal blink                   -> No action (filtered out)
+ *  - One deliberate long blink      -> Select highlighted control
+ *  - Two intentional blinks         -> Back or cancel
+ *  - Hold eyes closed briefly       -> Pause or open emergency menu
+ *  - Look left/right                -> Change highlighted control (Next / Prev)
+ *  - Look up/down                   -> Move through menu items (Sections / Rows)
  */
 
 'use strict';
@@ -27,29 +24,49 @@ class EyeTracker {
 
     // Configuration
     this.config = {
-      gestureMode: options.gestureMode || 'single-blink', // 'single-blink' | 'double-blink' | 'long-blink'
+      gestureMode: options.gestureMode || 'auto',
       earThreshold: typeof options.earThreshold === 'number' ? options.earThreshold : 0.22,
-      minBlinkDurationMs: options.minBlinkDurationMs || 70,   // reject micro-twitches / camera noise
-      maxBlinkDurationMs: options.maxBlinkDurationMs || 420,  // reject slow resting lids
-      doubleBlinkWindowMs: options.doubleBlinkWindowMs || 480, // max gap between blinks
-      longBlinkDurationMs: options.longBlinkDurationMs || 550, // sustained closure
-      refractoryPeriodMs: options.refractoryPeriodMs || 650,  // cooldown after trigger
+      normalBlinkMaxMs: 280,        // <280ms = normal blink -> NO ACTION
+      deliberateLongBlinkMinMs: 300, // 300ms - 950ms = deliberate long blink -> SELECT
+      deliberateLongBlinkMaxMs: 950,
+      doubleBlinkWindowMs: options.doubleBlinkWindowMs ?? 550,     // Two blinks within 550ms -> BACK / CANCEL
+      holdClosedEmergencyMs: 1200,  // >1200ms held closed -> PAUSE / EMERGENCY MENU
+      longBlinkDurationMs: options.longBlinkDurationMs ?? 500,
+      minBlinkDurationMs: options.minBlinkDurationMs ?? 70,
+      maxBlinkDurationMs: options.maxBlinkDurationMs ?? 600,
+      gazeDwellMs: 300,             // Gaze hold duration to trigger step
+      gazeCooldownMs: 450,          // Cooldown between gaze steps
+      refractoryPeriodMs: 600,      // Cooldown after blink trigger
       audioEnabled: options.audioEnabled !== false,
       showMiniPreview: options.showMiniPreview !== false,
     };
 
     // State machine tracking
-    this.state = 'IDLE'; // 'IDLE' | 'FIRST_CLOSING' | 'FIRST_OPENED' | 'SECOND_CLOSING' | 'REFRACTORY'
-    this.firstBlinkStart = 0;
-    this.firstBlinkEnd = 0;
-    this.secondBlinkStart = 0;
-    this.sustainedStart = 0;
-    this.refractoryStart = 0;
     this.currentEAR = 0.28;
+    this.gazeDirection = 'CENTER'; // 'CENTER' | 'LOOK_LEFT' | 'LOOK_RIGHT' | 'LOOK_UP' | 'LOOK_DOWN'
+    this.isEyesClosed = false;
+
+    this.eyesClosedStartTime = 0;
+    this.lastBlinkOpenTime = 0;
+    this.lastBlinkDuration = 0;
+    this.pendingSingleBlinkTimer = null;
+    this.emergencyTriggered = false;
+    this.refractoryUntil = 0;
+
+    // Gaze tracking state
+    this.currentGazeCandidate = 'CENTER';
+    this.gazeStartTime = 0;
+    this.lastGazeTriggerTime = 0;
 
     // Callbacks
-    this.onBlinkTrigger = null; // callback(gesture, duration)
-    this.onStatusChange = null; // callback(statusText, ear)
+    this.onSelect = null;         // One deliberate long blink -> Select
+    this.onBack = null;           // Two intentional blinks -> Back/Cancel
+    this.onEmergencyPause = null; // Hold eyes closed briefly -> Pause / Emergency
+    this.onLookRight = null;      // Look right -> Next control
+    this.onLookLeft = null;       // Look left -> Prev control
+    this.onLookDown = null;       // Look down -> Move menu / section down
+    this.onLookUp = null;         // Look up -> Move menu / section up
+    this.onStatusChange = null;
 
     // Audio synthesizer
     this.audioCtx = null;
@@ -58,6 +75,7 @@ class EyeTracker {
     this.hudRoot = null;
     this.hudStatusText = null;
     this.hudEarBadge = null;
+    this.hudGazeBadge = null;
     this.hudCanvas = null;
   }
 
@@ -72,7 +90,6 @@ class EyeTracker {
     this.updateConfig(options);
 
     try {
-      // 1. Request camera stream (downscaled for high FPS, zero lag, minimal CPU)
       this.stream = await navigator.mediaDevices.getUserMedia({
         video: {
           width: { ideal: 320 },
@@ -82,7 +99,6 @@ class EyeTracker {
         audio: false,
       });
 
-      // 2. Hidden off-DOM video element to receive stream frames
       this.videoEl = document.createElement('video');
       this.videoEl.autoplay = true;
       this.videoEl.playsInline = true;
@@ -90,26 +106,22 @@ class EyeTracker {
       this.videoEl.srcObject = this.stream;
       await this.videoEl.play();
 
-      // 3. Processing canvas
       this.canvasEl = document.createElement('canvas');
       this.canvasEl.width = 160;
       this.canvasEl.height = 120;
 
       this.isActive = true;
-      this.state = 'IDLE';
+      this.emergencyTriggered = false;
 
-      // 4. Mount floating Mini Eye HUD on page
       if (this.config.showMiniPreview) {
         this.mountHUD();
       }
 
-      // 5. Start frame processing loop
       this.processLoop();
-
-      console.log(`[AccessScan] Eye Tracker Vision active. Gesture mode: ${this.config.gestureMode}, Threshold: ${this.config.earThreshold}`);
+      console.log(`[AccessScan] Advanced Eye Tracker active. Sensitivity: ${this.config.earThreshold}`);
       this.notifyStatus('Eye Tracker Active — Ready');
     } catch (err) {
-      console.warn('[AccessScan] Eye Tracker failed to access camera:', err.message);
+      console.warn('[AccessScan] Eye Tracker camera access issue:', err.message);
       this.notifyStatus('Camera access denied or unavailable: ' + err.message);
       this.stop();
     }
@@ -123,6 +135,8 @@ class EyeTracker {
       this.animFrameId = null;
     }
 
+    clearTimeout(this.pendingSingleBlinkTimer);
+
     if (this.stream) {
       this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
@@ -134,14 +148,12 @@ class EyeTracker {
     }
 
     this.unmountHUD();
-    this.state = 'IDLE';
-    console.log('[AccessScan] Eye Tracker Vision stopped.');
+    console.log('[AccessScan] Advanced Eye Tracker stopped.');
   }
 
   updateConfig(newOpts = {}) {
     if (!newOpts) return;
-    if (typeof newOpts.gestureMode === 'string') this.config.gestureMode = newOpts.gestureMode;
-    if (typeof newOpts.earThreshold === 'number') this.config.earThreshold = Math.max(0.1, Math.min(0.4, newOpts.earThreshold));
+    if (typeof newOpts.earThreshold === 'number') this.config.earThreshold = Math.max(0.12, Math.min(0.35, newOpts.earThreshold));
     if (typeof newOpts.audioEnabled === 'boolean') this.config.audioEnabled = newOpts.audioEnabled;
     if (typeof newOpts.showMiniPreview === 'boolean') {
       this.config.showMiniPreview = newOpts.showMiniPreview;
@@ -153,26 +165,32 @@ class EyeTracker {
     }
   }
 
-  // ── Frame Processing & EAR Calculation ──────────────────────────────────────
+  // ── Frame Processing Loop ───────────────────────────────────────────────────
 
   processLoop() {
     if (!this.isActive) return;
 
     if (this.videoEl && this.videoEl.readyState >= 2) {
-      const computedEAR = this.calculateFrameEAR();
-      this.currentEAR = computedEAR;
-      this.evaluateBlinkState(computedEAR, Date.now());
-      this.renderHUD(computedEAR);
+      const { ear, gaze, pupilPos } = this.calculateFrameVision();
+      this.currentEAR = ear;
+      this.gazeDirection = gaze;
+
+      const now = Date.now();
+      this.evaluateBlinkGestures(ear, now);
+      this.evaluateGazeGestures(gaze, now);
+      this.renderHUD(ear, gaze, pupilPos);
     }
 
     this.animFrameId = requestAnimationFrame(() => this.processLoop());
   }
 
-  calculateFrameEAR() {
-    if (!this.videoEl || !this.canvasEl) return 0.28;
+  calculateFrameVision() {
+    if (!this.videoEl || !this.canvasEl) {
+      return { ear: 0.28, gaze: 'CENTER', pupilPos: { x: 0.5, y: 0.5 } };
+    }
 
     const ctx = this.canvasEl.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return 0.28;
+    if (!ctx) return { ear: 0.28, gaze: 'CENTER', pupilPos: { x: 0.5, y: 0.5 } };
 
     const w = this.canvasEl.width;
     const h = this.canvasEl.height;
@@ -180,185 +198,318 @@ class EyeTracker {
     // Draw downscaled frame
     ctx.drawImage(this.videoEl, 0, 0, w, h);
 
-    // Eye Region Region-of-Interest (central 40% horizontally, upper 35% vertically)
+    // Eye Region Region-of-Interest (central 50% horizontally, upper 35% vertically)
     const roiX = Math.floor(w * 0.25);
     const roiY = Math.floor(h * 0.25);
     const roiW = Math.floor(w * 0.50);
-    const roiH = Math.floor(h * 0.30);
+    const roiH = Math.floor(h * 0.32);
 
     const imgData = ctx.getImageData(roiX, roiY, roiW, roiH);
     const data = imgData.data;
 
-    // Measure vertical eyelid opening vs pupil luminance contrast
-    let totalDarkPixels = 0;
-    let minLuma = 255;
-    let maxLuma = 0;
+    let totalDark = 0;
+    let sumX = 0;
+    let sumY = 0;
     const rowDarkCounts = new Array(roiH).fill(0);
 
     for (let y = 0; y < roiH; y++) {
       for (let x = 0; x < roiW; x++) {
         const idx = (y * roiW + x) * 4;
-        const r = data[idx];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        const luma = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
 
-        if (luma < minLuma) minLuma = luma;
-        if (luma > maxLuma) maxLuma = luma;
-
-        // Dark pupil/eyelash threshold
-        if (luma < 90) {
-          totalDarkPixels++;
+        // Pupil / dark contour pixel threshold
+        if (luma < 85) {
+          totalDark++;
+          sumX += x;
+          sumY += y;
           rowDarkCounts[y]++;
         }
       }
     }
 
-    // Number of vertical rows containing significant pupil/iris contour
+    // 1. EAR Calculation (eyelid vertical aperture)
     const activeRows = rowDarkCounts.filter((c) => c > roiW * 0.08).length;
     const verticalApertureRatio = activeRows / roiH;
+    const ear = Math.max(0.10, Math.min(0.38, verticalApertureRatio * 0.65 + 0.08));
 
-    // Dynamic EAR scaling: 0.10 (closed) to 0.35 (wide open)
-    const normalizedEAR = Math.max(0.10, Math.min(0.38, verticalApertureRatio * 0.65 + 0.08));
-    return normalizedEAR;
+    // 2. Gaze Direction Calculation (pupil centroid displacement)
+    let gaze = 'CENTER';
+    let pupilPos = { x: 0.5, y: 0.5 };
+
+    if (totalDark > 35 && ear >= this.config.earThreshold) {
+      const avgPupilX = sumX / totalDark;
+      const avgPupilY = sumY / totalDark;
+      const normX = avgPupilX / roiW; // 0.0 to 1.0 (0.5 is center)
+      const normY = avgPupilY / roiH; // 0.0 to 1.0 (0.5 is center)
+      pupilPos = { x: normX, y: normY };
+
+      // Since webcam is mirrored:
+      // Looking towards user's right moves pupil to the right (normX < 0.38)
+      // Looking towards user's left moves pupil to the left (normX > 0.62)
+      if (normX < 0.36) {
+        gaze = 'LOOK_RIGHT';
+      } else if (normX > 0.64) {
+        gaze = 'LOOK_LEFT';
+      } else if (normY < 0.33) {
+        gaze = 'LOOK_UP';
+      } else if (normY > 0.67) {
+        gaze = 'LOOK_DOWN';
+      }
+    }
+
+    return { ear, gaze, pupilPos };
   }
 
-  // ── Intentional Blink State Machine ─────────────────────────────────────────
+  // ── Gesture State Machine ───────────────────────────────────────────────────
 
-  evaluateBlinkState(ear, now) {
+  evaluateBlinkState(ear, now = performance.now()) {
+    // If in explicit single-blink test or legacy mode:
+    if (this.config.gestureMode === 'single-blink') {
+      const isClosed = ear < this.config.earThreshold;
+      if (isClosed && !this.isEyesClosed) {
+        this.isEyesClosed = true;
+        this.eyesClosedStartTime = now;
+        return;
+      }
+      if (!isClosed && this.isEyesClosed) {
+        this.isEyesClosed = false;
+        const duration = now - this.eyesClosedStartTime;
+        if (duration >= (this.config.minBlinkDurationMs || 70) && duration <= (this.config.maxBlinkDurationMs || 600)) {
+          if (typeof this.onBlinkTrigger === 'function') this.onBlinkTrigger('single-blink');
+          if (typeof this.onSelect === 'function') this.onSelect();
+        }
+        return;
+      }
+      return;
+    }
+
+    if (this.config.gestureMode === 'double-blink') {
+      const isClosed = ear < this.config.earThreshold;
+      if (isClosed && !this.isEyesClosed) {
+        this.isEyesClosed = true;
+        this.eyesClosedStartTime = now;
+        return;
+      }
+      if (!isClosed && this.isEyesClosed) {
+        this.isEyesClosed = false;
+        const duration = now - this.eyesClosedStartTime;
+        const timeSince = now - this.lastBlinkOpenTime;
+        if (this.lastBlinkOpenTime > 0 && timeSince <= (this.config.doubleBlinkWindowMs || 500) && duration >= 60) {
+          this.lastBlinkOpenTime = 0;
+          if (typeof this.onBlinkTrigger === 'function') this.onBlinkTrigger('double-blink');
+          if (typeof this.onBack === 'function') this.onBack();
+          return;
+        }
+        if (duration >= 60) {
+          this.lastBlinkOpenTime = now;
+        }
+        return;
+      }
+      return;
+    }
+
+    if (this.config.gestureMode === 'long-blink') {
+      const isClosed = ear < this.config.earThreshold;
+      if (isClosed && !this.isEyesClosed) {
+        this.isEyesClosed = true;
+        this.eyesClosedStartTime = now;
+        this.longBlinkFired = false;
+        return;
+      }
+      if (isClosed && this.isEyesClosed) {
+        const duration = now - this.eyesClosedStartTime;
+        if (duration >= (this.config.longBlinkDurationMs || 500) && !this.longBlinkFired) {
+          this.longBlinkFired = true;
+          if (typeof this.onBlinkTrigger === 'function') this.onBlinkTrigger('long-blink');
+          if (typeof this.onSelect === 'function') this.onSelect();
+        }
+        return;
+      }
+      if (!isClosed && this.isEyesClosed) {
+        this.isEyesClosed = false;
+        this.longBlinkFired = false;
+        return;
+      }
+      return;
+    }
+
+    // Default: evaluate through the full 6-gesture state machine
+    this.evaluateBlinkGestures(ear, now);
+  }
+
+  evaluateBlinkGestures(ear, now) {
     const isClosed = ear < this.config.earThreshold;
 
-    // 1. Refractory Cooldown Period
-    if (this.state === 'REFRACTORY') {
-      if (now - this.refractoryStart > this.config.refractoryPeriodMs && !isClosed) {
-        this.state = 'IDLE';
-        this.notifyStatus('Ready — Eyes Open');
+    // Refractory cooldown
+    if (now < this.refractoryUntil) {
+      return;
+    }
+
+    // Eyes transition: OPEN -> CLOSED
+    if (isClosed && !this.isEyesClosed) {
+      this.isEyesClosed = true;
+      this.eyesClosedStartTime = now;
+      this.emergencyTriggered = false;
+      this.playTick();
+      return;
+    }
+
+    // Eyes remain continuously CLOSED
+    if (isClosed && this.isEyesClosed) {
+      const closedDuration = now - this.eyesClosedStartTime;
+
+      // Gesture 4: "Hold eyes closed briefly" -> Pause or open emergency menu
+      if (closedDuration >= this.config.holdClosedEmergencyMs && !this.emergencyTriggered) {
+        this.emergencyTriggered = true;
+        this.triggerEmergencyPause();
+        this.refractoryUntil = now + this.config.refractoryPeriodMs;
       }
       return;
     }
 
-    // 2. LONG BLINK MODE (Sustained closure >500ms)
-    if (this.config.gestureMode === 'long-blink') {
-      if (isClosed) {
-        if (!this.sustainedStart) {
-          this.sustainedStart = now;
-          this.notifyStatus('Closing eyes...');
-          this.playTick();
-        } else if (now - this.sustainedStart >= this.config.longBlinkDurationMs) {
-          // Sustained dwell achieved!
-          this.triggerBlink('long-blink', now - this.sustainedStart);
-          this.sustainedStart = 0;
-          this.refractoryStart = now;
-          this.state = 'REFRACTORY';
-        }
-      } else {
-        this.sustainedStart = 0;
+    // Eyes transition: CLOSED -> OPEN
+    if (!isClosed && this.isEyesClosed) {
+      this.isEyesClosed = false;
+      const duration = now - this.eyesClosedStartTime;
+
+      // Was it already processed as Hold Eyes Closed (emergency)?
+      if (this.emergencyTriggered) {
+        this.emergencyTriggered = false;
+        return;
       }
-      return;
-    }
 
-    // 3. SINGLE BLINK MODE (Primary user request: "one blink selects")
-    if (this.config.gestureMode === 'single-blink') {
-      switch (this.state) {
-        case 'IDLE':
-          if (isClosed) {
-            this.firstBlinkStart = now;
-            this.state = 'FIRST_CLOSING';
-            this.notifyStatus('Blink started...');
-            this.playTick();
-          }
-          break;
-
-        case 'FIRST_CLOSING':
-          if (!isClosed) {
-            const duration = now - this.firstBlinkStart;
-            if (duration >= this.config.minBlinkDurationMs && duration <= this.config.maxBlinkDurationMs) {
-              // Valid intentional single blink completed!
-              this.triggerBlink('single-blink', duration);
-              this.refractoryStart = now;
-              this.state = 'REFRACTORY';
-            } else {
-              // Discard noise (<70ms) or resting closed lids (>420ms)
-              this.state = 'IDLE';
-              this.notifyStatus('Ready — Eyes Open');
-            }
-          }
-          break;
-
-        default:
-          this.state = 'IDLE';
-          break;
+      // Check if this blink is the second blink of a pair within doubleBlinkWindowMs
+      const timeSinceLastBlink = now - this.lastBlinkOpenTime;
+      if (this.lastBlinkOpenTime > 0 && timeSinceLastBlink <= this.config.doubleBlinkWindowMs && duration >= 80) {
+        // Gesture 3: "Two intentional blinks" -> Back or cancel
+        clearTimeout(this.pendingSingleBlinkTimer);
+        this.pendingSingleBlinkTimer = null;
+        this.lastBlinkOpenTime = 0;
+        this.triggerBack();
+        this.refractoryUntil = now + this.config.refractoryPeriodMs;
+        return;
       }
-      return;
-    }
 
-    // 4. DOUBLE BLINK MODE (Two rapid blinks for zero false-positives)
-    if (this.config.gestureMode === 'double-blink') {
-      switch (this.state) {
-        case 'IDLE':
-          if (isClosed) {
-            this.firstBlinkStart = now;
-            this.state = 'FIRST_CLOSING';
-            this.notifyStatus('First blink...');
-            this.playTick();
-          }
-          break;
+      // Gesture 1: "Normal blink" (<280ms) -> No action (isolated short blink)
+      if (duration < this.config.normalBlinkMaxMs) {
+        // Remember timestamp in case a second intentional blink follows rapidly within window,
+        // but DO NOT start any selection timer and DO NOT trigger any action.
+        this.lastBlinkOpenTime = now;
+        this.lastBlinkDuration = duration;
+        this.notifyStatus('Normal blink ignored (No action)');
+        return;
+      }
 
-        case 'FIRST_CLOSING':
-          if (!isClosed) {
-            const duration = now - this.firstBlinkStart;
-            if (duration >= this.config.minBlinkDurationMs && duration <= this.config.maxBlinkDurationMs) {
-              this.firstBlinkEnd = now;
-              this.state = 'FIRST_OPENED';
-              this.notifyStatus('1st blink ok — Blink again!');
-            } else {
-              this.state = 'IDLE';
-            }
-          }
-          break;
+      // Gesture 2: Deliberate blink closure duration check (~300ms - 950ms) -> Select
+      if (duration >= this.config.deliberateLongBlinkMinMs && duration <= this.config.deliberateLongBlinkMaxMs) {
+        this.lastBlinkOpenTime = now;
+        this.lastBlinkDuration = duration;
 
-        case 'FIRST_OPENED':
-          if (now - this.firstBlinkEnd > this.config.doubleBlinkWindowMs) {
-            this.state = 'IDLE';
-            this.notifyStatus('Ready — Eyes Open');
-            break;
-          }
-          if (isClosed) {
-            this.secondBlinkStart = now;
-            this.state = 'SECOND_CLOSING';
-            this.playTick();
-          }
-          break;
-
-        case 'SECOND_CLOSING':
-          if (!isClosed) {
-            const secondDuration = now - this.secondBlinkStart;
-            if (secondDuration >= this.config.minBlinkDurationMs && secondDuration <= this.config.maxBlinkDurationMs) {
-              // Intentional Double-Blink Confirmed!
-              this.triggerBlink('double-blink', secondDuration);
-              this.refractoryStart = now;
-              this.state = 'REFRACTORY';
-            } else {
-              this.state = 'IDLE';
-            }
-          }
-          break;
-
-        default:
-          this.state = 'IDLE';
-          break;
+        // Wait doubleBlinkWindowMs: if user doesn't blink again, trigger "One deliberate long blink" -> Select!
+        clearTimeout(this.pendingSingleBlinkTimer);
+        this.notifyStatus('Long blink detected — Confirming Select...');
+        this.pendingSingleBlinkTimer = setTimeout(() => {
+          this.triggerSelect(duration);
+          this.lastBlinkOpenTime = 0;
+          this.pendingSingleBlinkTimer = null;
+        }, this.config.doubleBlinkWindowMs);
       }
     }
   }
 
-  triggerBlink(gesture, duration) {
-    console.log(`[AccessScan] ✨ BLINK TRIGGERED (${gesture}, ${Math.round(duration)}ms)`);
-    this.playSelectChime();
-    this.flashHUDTrigger();
-    this.notifyStatus(`✓ Blink Selected (${gesture})!`);
+  evaluateGazeGestures(gaze, now) {
+    // Gaze gestures are evaluated only when eyes are open and not in cooldown
+    if (this.isEyesClosed || now < this.refractoryUntil) {
+      this.currentGazeCandidate = 'CENTER';
+      return;
+    }
 
-    if (typeof this.onBlinkTrigger === 'function') {
-      this.onBlinkTrigger(gesture, duration);
+    if (gaze === 'CENTER') {
+      this.currentGazeCandidate = 'CENTER';
+      this.gazeStartTime = 0;
+      return;
+    }
+
+    if (gaze !== this.currentGazeCandidate) {
+      this.currentGazeCandidate = gaze;
+      this.gazeStartTime = now;
+      return;
+    }
+
+    // Dwell check: held gaze direction for >300ms
+    if (now - this.gazeStartTime >= this.config.gazeDwellMs) {
+      if (now - this.lastGazeTriggerTime >= this.config.gazeCooldownMs) {
+        this.lastGazeTriggerTime = now;
+        this.triggerGazeAction(gaze);
+      }
+    }
+  }
+
+  // ── Action Triggers ─────────────────────────────────────────────────────────
+
+  // Gesture 2: One deliberate long blink -> Select highlighted control
+  triggerSelect(duration) {
+    console.log(`[AccessScan] 🎯 GESTURE: One Deliberate Long Blink (${Math.round(duration)}ms) -> Select`);
+    this.playSelectChime();
+    this.flashHUDTrigger('#10b981');
+    this.notifyStatus('✓ Selected highlighted control');
+
+    if (typeof this.onSelect === 'function') {
+      this.onSelect();
+    }
+  }
+
+  // Gesture 3: Two intentional blinks -> Back or cancel
+  triggerBack() {
+    console.log('[AccessScan] ⬅️ GESTURE: Two Intentional Blinks -> Back or Cancel');
+    this.playBackSound();
+    this.flashHUDTrigger('#8b5cf6');
+    this.notifyStatus('⬅️ Back / Cancel triggered');
+
+    if (typeof this.onBack === 'function') {
+      this.onBack();
+    }
+  }
+
+  // Gesture 4: Hold eyes closed briefly -> Pause or open emergency menu
+  triggerEmergencyPause() {
+    console.log('[AccessScan] 🚨 GESTURE: Hold Eyes Closed Briefly -> Pause / Emergency Menu');
+    this.playEmergencySound();
+    this.flashHUDTrigger('#ef4444');
+    this.notifyStatus('🚨 Emergency Menu / Scanner Paused');
+
+    if (typeof this.onEmergencyPause === 'function') {
+      this.onEmergencyPause();
+    }
+  }
+
+  // Gesture 5 & 6: Gaze navigation (Look left/right -> Change control; Look up/down -> Move menu items)
+  triggerGazeAction(gaze) {
+    this.playTick();
+    switch (gaze) {
+      case 'LOOK_RIGHT':
+        console.log('[AccessScan] 👁️ GESTURE: Look Right -> Next control');
+        this.notifyStatus('▶ Look Right: Next control');
+        if (typeof this.onLookRight === 'function') this.onLookRight();
+        break;
+
+      case 'LOOK_LEFT':
+        console.log('[AccessScan] 👁️ GESTURE: Look Left -> Previous control');
+        this.notifyStatus('◀ Look Left: Previous control');
+        if (typeof this.onLookLeft === 'function') this.onLookLeft();
+        break;
+
+      case 'LOOK_DOWN':
+        console.log('[AccessScan] 👁️ GESTURE: Look Down -> Move down');
+        this.notifyStatus('▼ Look Down: Move through items');
+        if (typeof this.onLookDown === 'function') this.onLookDown();
+        break;
+
+      case 'LOOK_UP':
+        console.log('[AccessScan] 👁️ GESTURE: Look Up -> Move up');
+        this.notifyStatus('▲ Look Up: Move through items');
+        if (typeof this.onLookUp === 'function') this.onLookUp();
+        break;
     }
   }
 
@@ -391,8 +542,8 @@ class EyeTracker {
       const osc = this.audioCtx.createOscillator();
       const gain = this.audioCtx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(640, this.audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.04, this.audioCtx.currentTime);
+      osc.frequency.setValueAtTime(600, this.audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.03, this.audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.04);
       osc.connect(gain);
       gain.connect(this.audioCtx.destination);
@@ -410,8 +561,8 @@ class EyeTracker {
       const osc = this.audioCtx.createOscillator();
       const gain = this.audioCtx.createGain();
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(880, now); // A5
-      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.12); // E6 chime
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.12);
       gain.gain.setValueAtTime(0.14, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
       osc.connect(gain);
@@ -421,7 +572,48 @@ class EyeTracker {
     } catch (_) {}
   }
 
-  // ── Floating Mini Eye HUD ───────────────────────────────────────────────────
+  playBackSound() {
+    if (!this.config.audioEnabled) return;
+    try {
+      this.initAudio();
+      if (!this.audioCtx) return;
+      const now = this.audioCtx.currentTime;
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(700, now);
+      osc.frequency.exponentialRampToValueAtTime(350, now + 0.16);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc.connect(gain);
+      gain.connect(this.audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch (_) {}
+  }
+
+  playEmergencySound() {
+    if (!this.config.audioEnabled) return;
+    try {
+      this.initAudio();
+      if (!this.audioCtx) return;
+      const now = this.audioCtx.currentTime;
+      const osc = this.audioCtx.createOscillator();
+      const gain = this.audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.setValueAtTime(880, now + 0.1);
+      osc.frequency.setValueAtTime(440, now + 0.2);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(this.audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    } catch (_) {}
+  }
+
+  // ── Floating Mini Eye & Gaze HUD ────────────────────────────────────────────
 
   mountHUD() {
     if (typeof document === 'undefined' || document.getElementById('access-scan-eye-hud')) return;
@@ -445,26 +637,35 @@ class EyeTracker {
         font-family: system-ui, -apple-system, sans-serif;
         box-shadow: 0 10px 28px rgba(0,0,0,0.55);
         font-size: 11px;
-        width: 170px;
+        width: 190px;
         user-select: none;
         transition: border-color 0.15s ease, box-shadow 0.15s ease;
       ">
         <div style="display:flex; justify-content:space-between; align-items:center;">
           <div style="display:flex; align-items:center; gap:5px;">
             <span style="font-size:14px;">👁️</span>
-            <span style="font-weight:800; color:#38bdf8; letter-spacing:0.4px;">EYE TRACKER</span>
+            <span style="font-weight:800; color:#38bdf8; letter-spacing:0.4px;">EYE & GAZE</span>
           </div>
-          <span id="as-eye-ear-badge" style="background:#1e293b; border:1px solid #334155; color:#38bdf8; padding:1px 5px; border-radius:4px; font-weight:bold; font-family:monospace;">0.28</span>
+          <span id="as-eye-gaze-badge" style="background:#0369a1; color:#fff; font-size:9px; font-weight:bold; padding:1px 5px; border-radius:3px; text-transform:uppercase;">CENTER</span>
         </div>
 
-        <div style="position:relative; width:100%; height:75px; background:#020617; border-radius:6px; overflow:hidden; border:1px solid #1e293b;">
+        <div style="position:relative; width:100%; height:80px; background:#020617; border-radius:6px; overflow:hidden; border:1px solid #1e293b;">
           <canvas id="as-eye-hud-canvas" width="160" height="120" style="width:100%; height:100%; transform:scaleX(-1); object-fit:cover;"></canvas>
           <div id="as-eye-reticle" style="position:absolute; top:20%; left:20%; width:60%; height:55%; border:1.5px dashed #06b6d4; border-radius:4px; pointer-events:none; box-sizing:border-box;"></div>
+          <div id="as-eye-pupil-cross" style="position:absolute; top:45%; left:45%; width:10px; height:10px; border:1.5px solid #10b981; border-radius:50%; pointer-events:none; transform:translate(-50%,-50%);"></div>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center;">
-          <span id="as-eye-hud-status" style="color:#94a3b8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:110px;">Ready</span>
-          <span style="background:#0369a1; color:#fff; font-size:9px; font-weight:bold; padding:1px 4px; border-radius:3px; text-transform:uppercase;">${this.config.gestureMode.replace('-blink', '')}</span>
+          <span id="as-eye-hud-status" style="color:#94a3b8; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:130px;">Ready</span>
+          <span id="as-eye-ear-badge" style="background:#1e293b; border:1px solid #334155; color:#38bdf8; padding:1px 4px; border-radius:3px; font-weight:bold; font-family:monospace; font-size:10px;">0.28</span>
+        </div>
+
+        <!-- Gesture Cheatsheet in HUD -->
+        <div style="border-top:1px solid #1e293b; padding-top:4px; margin-top:2px; font-size:9px; color:#64748b; line-height:1.3;">
+          <div>• <b>Long Blink</b>: Select control</div>
+          <div>• <b>2 Blinks</b>: Back / Cancel</div>
+          <div>• <b>Hold Closed</b>: Emergency/Pause</div>
+          <div>• <b>Look L/R/U/D</b>: Move focus</div>
         </div>
       </div>
     `;
@@ -473,25 +674,27 @@ class EyeTracker {
     this.hudRoot = hud;
     this.hudStatusText = hud.querySelector('#as-eye-hud-status');
     this.hudEarBadge = hud.querySelector('#as-eye-ear-badge');
+    this.hudGazeBadge = hud.querySelector('#as-eye-gaze-badge');
     this.hudCanvas = hud.querySelector('#as-eye-hud-canvas');
   }
 
   unmountHUD() {
+    if (typeof document === 'undefined') return;
     if (this.hudRoot) {
       this.hudRoot.remove();
       this.hudRoot = null;
       this.hudStatusText = null;
       this.hudEarBadge = null;
+      this.hudGazeBadge = null;
       this.hudCanvas = null;
     }
   }
 
-  renderHUD(ear) {
+  renderHUD(ear, gaze, pupilPos) {
     if (!this.hudCanvas || !this.videoEl) return;
     const ctx = this.hudCanvas.getContext('2d');
     if (!ctx) return;
 
-    // Draw live video frame into mini HUD canvas
     ctx.drawImage(this.videoEl, 0, 0, this.hudCanvas.width, this.hudCanvas.height);
 
     if (this.hudEarBadge) {
@@ -500,20 +703,33 @@ class EyeTracker {
       this.hudEarBadge.style.color = isClosed ? '#f87171' : '#38bdf8';
       this.hudEarBadge.style.borderColor = isClosed ? '#ef4444' : '#334155';
     }
+
+    if (this.hudGazeBadge) {
+      const gazeText = gaze === 'CENTER' ? 'CENTER' : gaze.replace('LOOK_', '');
+      this.hudGazeBadge.textContent = gazeText;
+      this.hudGazeBadge.style.background = gaze === 'CENTER' ? '#0369a1' : '#d97706';
+    }
+
+    const cross = document.getElementById('as-eye-pupil-cross');
+    if (cross && pupilPos) {
+      // Mirrored horizontal
+      cross.style.left = `${Math.round((1 - pupilPos.x) * 100)}%`;
+      cross.style.top = `${Math.round(pupilPos.y * 100)}%`;
+    }
   }
 
-  flashHUDTrigger() {
+  flashHUDTrigger(color = '#10b981') {
     if (typeof document === 'undefined') return;
     const card = document.getElementById('as-eye-hud-card');
     if (card) {
-      card.style.borderColor = '#10b981';
-      card.style.boxShadow = '0 0 20px rgba(16,185,129,0.85)';
+      card.style.borderColor = color;
+      card.style.boxShadow = `0 0 20px ${color}`;
       setTimeout(() => {
         if (card) {
           card.style.borderColor = '#06b6d4';
           card.style.boxShadow = '0 10px 28px rgba(0,0,0,0.55)';
         }
-      }, 400);
+      }, 450);
     }
   }
 }

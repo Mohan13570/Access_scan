@@ -33,6 +33,10 @@ class SingleSwitchScanner {
     this.keyboardColIndex = 0;
     this.keyboardLevel = 'row'; // 'row' | 'key'
 
+    // Emergency menu state
+    this.emergencyMenuOpen = false;
+    this.emergencyMenuIndex = 0;
+
     this.audioCtx = null;
     this._boundKeyDown = this._handleKeyDown.bind(this);
     this._attached = false;
@@ -82,6 +86,7 @@ class SingleSwitchScanner {
     this.clearInterval();
     this.detachEvents();
     this.closeKeyboard();
+    this.closeEmergencyMenu();
     this.clearHighlights();
     this.removeDock();
 
@@ -102,9 +107,52 @@ class SingleSwitchScanner {
         audioEnabled: this.audioEnabled,
         showMiniPreview: opts.showMiniPreview !== false,
       });
+
+      // ── Connect All 6 Gaze & Blink Gesture Callbacks ──
+      // Gesture 2: One deliberate long blink -> Select highlighted control
+      this.eyeTracker.onSelect = () => {
+        this.flashSelectionPulse();
+        if (this.emergencyMenuOpen) {
+          this.activateEmergencyMenuItem();
+        } else {
+          this.handleSwitchTrigger();
+        }
+      };
+
+      // Gesture 3: Two intentional blinks -> Back or cancel
+      this.eyeTracker.onBack = () => {
+        this.handleBack();
+      };
+
+      // Gesture 4: Hold eyes closed briefly -> Pause or open emergency menu
+      this.eyeTracker.onEmergencyPause = () => {
+        this.toggleEmergencyMenu();
+      };
+
+      // Gesture 5: Look left / right -> Change highlighted control
+      this.eyeTracker.onLookRight = () => {
+        this.stepNext();
+      };
+      this.eyeTracker.onLookLeft = () => {
+        this.stepPrev();
+      };
+
+      // Gesture 6: Look up / down -> Move through menu items
+      this.eyeTracker.onLookDown = () => {
+        this.stepDown();
+      };
+      this.eyeTracker.onLookUp = () => {
+        this.stepUp();
+      };
+
+      // Legacy fallback
       this.eyeTracker.onBlinkTrigger = (gesture) => {
         this.flashSelectionPulse();
-        this.handleSwitchTrigger();
+        if (this.emergencyMenuOpen) {
+          this.activateEmergencyMenuItem();
+        } else {
+          this.handleSwitchTrigger();
+        }
       };
     }
     this.eyeTracker.start({
@@ -581,32 +629,59 @@ class SingleSwitchScanner {
     this.beep(this.isPaused ? 300 : 600, 0.08);
   }
 
-  // ── Keydown Event Router ────────────────────────────────────────────────────
-  _handleKeyDown(e) {
-    if (e.code === 'Space') {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleSwitchTrigger();
-    } else if (e.key === 'p' || e.key === 'P') {
-      this.togglePause();
-    } else if (e.key === 'Escape') {
-      if (this.isKeyboardOpen) {
-        this.closeKeyboard();
-        this.speak('Keyboard closed');
-      } else {
-        this.inSectionLevel = true;
-        this.highlight(this.sections[this.currentSectionIndex]?.elements[0], true);
-      }
-    } else if (e.key === 'ArrowRight' && this.isKeyboardOpen) {
-      e.preventDefault();
+  // ── Gaze Directional Navigation Helpers ────────────────────────────────────
+
+  stepNext() {
+    if (this.emergencyMenuOpen) {
+      this.emergencyMenuIndex = (this.emergencyMenuIndex + 1) % 5;
+      this.renderEmergencyMenu();
+      this.beep(520, 0.04);
+      return;
+    }
+
+    if (this.isKeyboardOpen) {
       if (this.keyboardLevel === 'row') {
         this.keyboardRowIndex = (this.keyboardRowIndex + 1) % this.KB_ROWS.length;
       } else {
         this.keyboardColIndex = (this.keyboardColIndex + 1) % this.KB_ROWS[this.keyboardRowIndex].length;
       }
       this.renderKeyboardUI();
-    } else if (e.key === 'ArrowLeft' && this.isKeyboardOpen) {
-      e.preventDefault();
+      this.beep(460, 0.03);
+      return;
+    }
+
+    if (!this.isScanning || this.sections.length === 0) return;
+
+    if (this.hierarchicalMode) {
+      if (this.inSectionLevel) {
+        this.currentSectionIndex = (this.currentSectionIndex + 1) % this.sections.length;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) this.highlight(curSec.elements[0], true);
+      } else {
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.currentControlIndex = (this.currentControlIndex + 1) % curSec.elements.length;
+          this.highlight(curSec.elements[this.currentControlIndex], false);
+        }
+      }
+    } else {
+      const allFlat = this.sections.flatMap((s) => s.elements);
+      if (allFlat.length === 0) return;
+      this.currentControlIndex = (this.currentControlIndex + 1) % allFlat.length;
+      this.highlight(allFlat[this.currentControlIndex], false);
+    }
+    this.resetTimer();
+  }
+
+  stepPrev() {
+    if (this.emergencyMenuOpen) {
+      this.emergencyMenuIndex = (this.emergencyMenuIndex - 1 + 5) % 5;
+      this.renderEmergencyMenu();
+      this.beep(520, 0.04);
+      return;
+    }
+
+    if (this.isKeyboardOpen) {
       if (this.keyboardLevel === 'row') {
         this.keyboardRowIndex = (this.keyboardRowIndex - 1 + this.KB_ROWS.length) % this.KB_ROWS.length;
       } else {
@@ -615,9 +690,304 @@ class SingleSwitchScanner {
           this.KB_ROWS[this.keyboardRowIndex].length;
       }
       this.renderKeyboardUI();
-    } else if (e.key === 'ArrowUp' && this.isKeyboardOpen) {
-      e.preventDefault();
+      this.beep(460, 0.03);
+      return;
+    }
+
+    if (!this.isScanning || this.sections.length === 0) return;
+
+    if (this.hierarchicalMode) {
+      if (this.inSectionLevel) {
+        this.currentSectionIndex = (this.currentSectionIndex - 1 + this.sections.length) % this.sections.length;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) this.highlight(curSec.elements[0], true);
+      } else {
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.currentControlIndex = (this.currentControlIndex - 1 + curSec.elements.length) % curSec.elements.length;
+          this.highlight(curSec.elements[this.currentControlIndex], false);
+        }
+      }
+    } else {
+      const allFlat = this.sections.flatMap((s) => s.elements);
+      if (allFlat.length === 0) return;
+      this.currentControlIndex = (this.currentControlIndex - 1 + allFlat.length) % allFlat.length;
+      this.highlight(allFlat[this.currentControlIndex], false);
+    }
+    this.resetTimer();
+  }
+
+  stepDown() {
+    if (this.emergencyMenuOpen) {
+      this.stepNext();
+      return;
+    }
+
+    if (this.isKeyboardOpen) {
+      this.keyboardRowIndex = (this.keyboardRowIndex + 1) % this.KB_ROWS.length;
+      if (this.keyboardLevel === 'key') {
+        this.keyboardColIndex = Math.min(this.keyboardColIndex, this.KB_ROWS[this.keyboardRowIndex].length - 1);
+      }
+      this.renderKeyboardUI();
+      this.beep(440, 0.03);
+      return;
+    }
+
+    if (!this.isScanning || this.sections.length === 0) return;
+
+    if (this.hierarchicalMode) {
+      if (this.inSectionLevel) {
+        this.inSectionLevel = false;
+        this.currentControlIndex = 0;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.highlight(curSec.elements[0], false);
+        }
+      } else {
+        this.currentSectionIndex = (this.currentSectionIndex + 1) % this.sections.length;
+        this.currentControlIndex = 0;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.highlight(curSec.elements[0], false);
+        }
+      }
+    } else {
+      this.stepNext();
+    }
+    this.resetTimer();
+  }
+
+  stepUp() {
+    if (this.emergencyMenuOpen) {
+      this.stepPrev();
+      return;
+    }
+
+    if (this.isKeyboardOpen) {
+      this.keyboardRowIndex = (this.keyboardRowIndex - 1 + this.KB_ROWS.length) % this.KB_ROWS.length;
+      if (this.keyboardLevel === 'key') {
+        this.keyboardColIndex = Math.min(this.keyboardColIndex, this.KB_ROWS[this.keyboardRowIndex].length - 1);
+      }
+      this.renderKeyboardUI();
+      this.beep(440, 0.03);
+      return;
+    }
+
+    if (!this.isScanning || this.sections.length === 0) return;
+
+    if (this.hierarchicalMode) {
+      if (!this.inSectionLevel) {
+        this.inSectionLevel = true;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.highlight(curSec.elements[0], true);
+        }
+      } else {
+        this.currentSectionIndex = (this.currentSectionIndex - 1 + this.sections.length) % this.sections.length;
+        const curSec = this.sections[this.currentSectionIndex];
+        if (curSec?.elements.length > 0) {
+          this.highlight(curSec.elements[0], true);
+        }
+      }
+    } else {
+      this.stepPrev();
+    }
+    this.resetTimer();
+  }
+
+  // ── Two Intentional Blinks: Back or Cancel ───────────────────────────────────
+
+  handleBack() {
+    if (this.emergencyMenuOpen) {
+      this.closeEmergencyMenu();
+      this.speak('Emergency menu closed');
+      return;
+    }
+
+    if (this.isKeyboardOpen) {
       this.closeKeyboard();
+      this.speak('Keyboard closed');
+      return;
+    }
+
+    if (this.hierarchicalMode && !this.inSectionLevel) {
+      this.inSectionLevel = true;
+      const curSec = this.sections[this.currentSectionIndex];
+      if (curSec && curSec.elements.length > 0) {
+        this.highlight(curSec.elements[0], true);
+      }
+      this.speak('Returned to sections');
+      return;
+    }
+
+    // Top-level back: browser back
+    this.speak('Navigating back');
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+        chrome.runtime.sendMessage({ action: 'NAVIGATE_BACK' });
+      }
+    } catch (_) {}
+
+    if (window.history && window.history.length > 1) {
+      window.history.back();
+    }
+  }
+
+  // ── Hold Eyes Closed: Pause or Emergency Menu ───────────────────────────────
+
+  toggleEmergencyMenu() {
+    if (this.emergencyMenuOpen) {
+      this.closeEmergencyMenu();
+      return;
+    }
+    this.openEmergencyMenu();
+  }
+
+  openEmergencyMenu() {
+    this.emergencyMenuOpen = true;
+    this.emergencyMenuIndex = 0;
+    this.clearInterval();
+
+    let root = document.getElementById('access-scan-emergency-overlay');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'access-scan-emergency-overlay';
+      document.body.appendChild(root);
+    }
+
+    this.renderEmergencyMenu();
+    this.speak('Emergency menu opened. Look to navigate. Long blink to select. Two blinks to cancel.');
+    this.beep(880, 0.15);
+  }
+
+  renderEmergencyMenu() {
+    const root = document.getElementById('access-scan-emergency-overlay');
+    if (!root || !this.emergencyMenuOpen) return;
+
+    const items = [
+      { id: 'alert', icon: '🚨', label: 'Call Caregiver / Alert Assistance', desc: 'Emits loud chime and voice alert' },
+      { id: 'pause', icon: this.isPaused ? '▶️' : '⏸️', label: this.isPaused ? 'Resume Scanning' : 'Pause Scanning', desc: 'Temporarily pause auto-scanning' },
+      { id: 'reload', icon: '🔄', label: 'Reload Page', desc: 'Refresh current webpage' },
+      { id: 'back', icon: '⬅️', label: 'Go Back to Previous Page', desc: 'Browser history back navigation' },
+      { id: 'cancel', icon: '✕', label: 'Dismiss Menu & Resume', desc: 'Close this emergency menu' },
+    ];
+
+    const itemsHtml = items
+      .map((item, idx) => {
+        const isSel = idx === this.emergencyMenuIndex;
+        return `
+        <div class="access-emergency-item ${isSel ? 'emergency-item-active' : ''}" style="display:flex;align-items:center;gap:14px;padding:12px 18px;margin-bottom:10px;border-radius:10px;background:${isSel ? '#fee2e2' : '#ffffff'};border:2.5px solid ${isSel ? '#ef4444' : '#e5e7eb'};box-shadow:${isSel ? '0 4px 12px rgba(239,68,68,0.25)' : 'none'};cursor:pointer;">
+          <span style="font-size:24px;">${item.icon}</span>
+          <div style="flex:1;">
+            <div style="font-weight:bold;font-size:15px;color:${isSel ? '#991b1b' : '#1f2937'};">${item.label}</div>
+            <div style="font-size:12px;color:#6b7280;">${item.desc}</div>
+          </div>
+          ${isSel ? '<span style="color:#ef4444;font-weight:bold;font-size:13px;">[SELECTED]</span>' : ''}
+        </div>
+      `;
+      })
+      .join('');
+
+    root.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:2147483647;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;">
+        <div style="width:92%;max-width:540px;background:#ffffff;border:3px solid #ef4444;border-radius:16px;padding:24px;box-shadow:0 25px 50px rgba(0,0,0,0.5);">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #fee2e2;">
+            <span style="font-size:28px;">🚨</span>
+            <div>
+              <div style="font-size:18px;font-weight:bold;color:#991b1b;">AccessScan Emergency & Quick Actions</div>
+              <div style="font-size:12px;color:#6b7280;">Look Up/Down or Left/Right to change item • Long blink to select • 2 blinks to cancel</div>
+            </div>
+          </div>
+          <div id="access-emergency-list">${itemsHtml}</div>
+        </div>
+      </div>
+    `;
+
+    const domItems = root.querySelectorAll('.access-emergency-item');
+    domItems.forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        this.emergencyMenuIndex = idx;
+        this.activateEmergencyMenuItem();
+      });
+    });
+  }
+
+  closeEmergencyMenu() {
+    this.emergencyMenuOpen = false;
+    const root = document.getElementById('access-scan-emergency-overlay');
+    if (root) root.remove();
+    if (this.isScanning && !this.isPaused) {
+      this.resetTimer();
+    }
+  }
+
+  activateEmergencyMenuItem() {
+    const actions = ['alert', 'pause', 'reload', 'back', 'cancel'];
+    const act = actions[this.emergencyMenuIndex] || 'cancel';
+
+    if (act === 'alert') {
+      this.speak('Emergency assistance alert activated! Calling for caregiver help.');
+      this.playLoudAlarm();
+      this.closeEmergencyMenu();
+    } else if (act === 'pause') {
+      this.closeEmergencyMenu();
+      this.togglePause();
+    } else if (act === 'reload') {
+      this.speak('Reloading page');
+      window.location.reload();
+    } else if (act === 'back') {
+      this.closeEmergencyMenu();
+      this.handleBack();
+    } else {
+      this.closeEmergencyMenu();
+      this.speak('Emergency menu closed');
+    }
+  }
+
+  playLoudAlarm() {
+    try {
+      const ctx = this.getAudioContext();
+      for (let i = 0; i < 3; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800 + i * 200, ctx.currentTime + i * 0.2);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime + i * 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + (i + 1) * 0.2);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.2);
+        osc.stop(ctx.currentTime + (i + 1) * 0.2);
+      }
+    } catch (_) {}
+  }
+
+  // ── Keydown Event Router ────────────────────────────────────────────────────
+  _handleKeyDown(e) {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (this.emergencyMenuOpen) {
+        this.activateEmergencyMenuItem();
+      } else {
+        this.handleSwitchTrigger();
+      }
+    } else if (e.key === 'p' || e.key === 'P') {
+      this.togglePause();
+    } else if (e.key === 'Escape') {
+      this.handleBack();
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      this.stepNext();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      this.stepPrev();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      this.stepDown();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      this.stepUp();
     }
   }
 }
