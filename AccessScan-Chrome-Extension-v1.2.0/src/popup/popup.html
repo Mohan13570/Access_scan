@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AccessScan</title>
+  <title>Access Scan 1</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
@@ -14,10 +14,10 @@
       <div id="brand">
         <span id="brand-icon">♿</span>
         <div>
-          <h1>AccessScan</h1>
-          <p id="brand-sub">Universal 1-Key &amp; 4-Key Assistant</p>
+          <h1>Access Scan 1</h1>
+          <p id="brand-sub">Universal 4-Key &amp; 1-Key Assistant</p>
         </div>
-        <span id="version-badge">v2.1</span>
+        <span id="version-badge">v1.0</span>
       </div>
     </header>
 
@@ -49,7 +49,7 @@
       </div>
     </section>
 
-    <!-- Mode Selector: 4-Key Arrow vs 1-Key Single Switch vs Eye-Blink Scanner -->
+    <!-- Mode Selector: 4-Key Arrow vs 1-Key Single Switch -->
     <section id="mode-selector-section">
       <div class="section-title">CHOOSE INTERACTION MODE</div>
       <div class="mode-pill-group" role="radiogroup" aria-label="Assistive mode">
@@ -62,11 +62,6 @@
           <span class="mode-icon">🔘</span>
           <span class="mode-title">1-Key Switch</span>
           <span class="mode-desc">Spacebar Auto-Scan</span>
-        </button>
-        <button type="button" id="mode-btn-eye" class="mode-pill" role="radio" aria-checked="false">
-          <span class="mode-icon">👁️</span>
-          <span class="mode-title">Eye Scanner</span>
-          <span class="mode-desc">Blink to Select</span>
         </button>
       </div>
     </section>
@@ -119,114 +114,6 @@
           <input type="checkbox" id="speech-enabled" checked />
           Speak element labels aloud (TTS Voice)
         </label>
-      </div>
-    </section>
-
-    <!-- Eye-Blink Scanner Guide, Sensitivity & Controls -->
-    <section id="key-guide-eye" class="guide-panel" aria-labelledby="key-guide-eye-heading" style="display: none;">
-      <h2 id="key-guide-eye-heading">Eye Blink Controls &amp; Sensitivity</h2>
-      <p class="key-note" style="margin-bottom: 10px;">The scanner auto-advances through page elements. Simply blink to select!</p>
-
-      <!-- Live Eye Status Card -->
-      <div id="eye-live-status-box" class="eye-status-card">
-        <div class="eye-status-row">
-          <div style="display:flex; align-items:center; gap:6px;">
-            <span id="eye-status-icon" style="font-size: 16px;">👁️</span>
-            <span id="eye-status-readout" style="font-weight: 700; color: #38bdf8;">Eyes Open — Tracking</span>
-          </div>
-          <span id="eye-ear-readout" class="ear-badge">EAR: 0.28</span>
-        </div>
-      </div>
-
-      <!-- Gesture Action Cheatsheet Table -->
-      <div class="gesture-table-container" style="margin-top: 12px;">
-        <label class="group-label">Gesture-to-Action Mapping</label>
-        <table class="gesture-mapping-table">
-          <thead>
-            <tr>
-              <th style="width: 50%;">Gesture</th>
-              <th style="width: 50%;">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td><strong>Normal blink</strong></td>
-              <td><span class="action-tag action-ignore">No action</span></td>
-            </tr>
-            <tr>
-              <td><strong>One deliberate long blink</strong></td>
-              <td><span class="action-tag action-select">Select highlighted control</span></td>
-            </tr>
-            <tr>
-              <td><strong>Two intentional blinks</strong></td>
-              <td><span class="action-tag action-back">Back or cancel</span></td>
-            </tr>
-            <tr>
-              <td><strong>Hold eyes closed briefly</strong></td>
-              <td><span class="action-tag action-emergency">Pause or open emergency menu</span></td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Gesture Selection -->
-      <div class="setting-subgroup">
-        <label class="group-label">Blink Mode</label>
-        <div class="gesture-pill-group" role="radiogroup" aria-label="Blink gesture">
-          <button type="button" class="gesture-btn active" data-gesture="single-blink">
-            <span class="g-title">1 Blink</span>
-            <span class="g-sub">Single Blink</span>
-          </button>
-          <button type="button" class="gesture-btn" data-gesture="double-blink">
-            <span class="g-title">2 Blinks</span>
-            <span class="g-sub">Double Blink</span>
-          </button>
-          <button type="button" class="gesture-btn" data-gesture="long-blink">
-            <span class="g-title">Dwell</span>
-            <span class="g-sub">Hold Closed</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- EAR Sensitivity Slider -->
-      <div class="setting-subgroup">
-        <div class="setting-label-row">
-          <label for="ear-threshold-slider">Blink Sensitivity Threshold</label>
-          <span id="ear-threshold-badge">0.22</span>
-        </div>
-        <input type="range" id="ear-threshold-slider" min="0.15" max="0.32" step="0.01" value="0.22" />
-        <div class="speed-presets">
-          <button type="button" class="ear-preset-btn" data-ear="0.26">Sensitive (0.26)</button>
-          <button type="button" class="ear-preset-btn active" data-ear="0.22">Normal (0.22)</button>
-          <button type="button" class="ear-preset-btn" data-ear="0.18">Strict (0.18)</button>
-        </div>
-      </div>
-
-      <!-- Camera Preview & Trigger Buttons -->
-      <div class="switch-actions-row">
-        <button type="button" id="btn-toggle-camera" class="btn-action btn-camera-toggle">📷 Stop Camera</button>
-        <button type="button" id="btn-test-blink" class="btn-action btn-switch-trigger">⚡ Test Blink</button>
-      </div>
-      <div style="margin-top: 8px;">
-        <button type="button" id="btn-setup-camera" class="btn-action" style="width: 100%; background: #0284c7; color: #fff; font-weight: 700; border: none; padding: 8px; border-radius: 6px; cursor: pointer;">
-          📷 Camera &amp; Permission Setup (Test Vision)
-        </button>
-      </div>
-
-      <!-- Embedded Scan Speed Controls -->
-      <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border);">
-        <div class="setting-label-row">
-          <label for="eye-scan-speed-slider" style="font-weight: 700; color: #38bdf8;">Auto-Scan Speed</label>
-          <span id="eye-speed-val-badge">1.5s</span>
-        </div>
-        <input type="range" id="eye-scan-speed-slider" min="400" max="3500" step="100" value="1500" />
-        <div class="speed-presets">
-          <button type="button" class="eye-preset-btn" data-speed="800">0.8s (Fast)</button>
-          <button type="button" class="eye-preset-btn active" data-speed="1500">1.5s (Std)</button>
-          <button type="button" class="eye-preset-btn" data-speed="2000">2.0s (Slow)</button>
-          <button type="button" class="eye-preset-btn" data-speed="2800">2.8s (Gentle)</button>
-        </div>
-        <p class="speed-persist-note">✓ Speed is permanently saved and applied to all websites.</p>
       </div>
     </section>
 
@@ -283,7 +170,7 @@
     </section>
 
     <footer>
-      <p>Universal Accessibility Assistant ♿ · MIT License</p>
+      <p>Access Scan 1 · Universal Accessibility Assistant ♿ · MIT License</p>
     </footer>
 
   </div>

@@ -1,15 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "AccessScan — Universal Accessibility Assistant (4-Key, 1-Key & Eye-Blink)",
-  "short_name": "AccessScan",
-  "version": "2.2.0",
-  "description": "Universal accessible browser navigation for people with severe motor impairments. Supports Four-Key arrow navigation, Single-Switch spacebar scanning, and Webcam Eye-Blink to Select.",
+  "name": "Access Scan 1",
+  "short_name": "AccessScan1",
+  "version": "2.3.0",
+  "description": "Universal accessible browser navigation for people with motor impairments. Supports Four-Key arrow navigation and Single-Switch (1-Key) spacebar scanning.",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
-    "tabs",
-    "offscreen"
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -25,7 +24,6 @@
         "src/content/highlighter.js",
         "src/content/hierarchy.js",
         "src/content/controller.js",
-        "src/content/eye-tracker.js",
         "src/content/single-switch.js",
         "src/content/credentials.js",
         "src/content/overlay.js",
@@ -44,7 +42,7 @@
       "48": "src/icons/icon48.png",
       "128": "src/icons/icon128.png"
     },
-    "default_title": "AccessScan — Four-Key Navigator"
+    "default_title": "Access Scan 1 — Four-Key & Single-Switch Navigator"
   },
   "icons": {
     "16": "src/icons/icon16.png",
@@ -57,9 +55,7 @@
       "resources": [
         "src/keyboard/keyboard.html",
         "src/keyboard/keyboard.css",
-        "src/keyboard/keyboard.js",
-        "src/camera/camera.html",
-        "src/camera/camera.js"
+        "src/keyboard/keyboard.js"
       ],
       "matches": ["<all_urls>"]
     }

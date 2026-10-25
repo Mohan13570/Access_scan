@@ -1,9 +1,10 @@
 /**
- * AccessScan v2.0 — Background Service Worker (Manifest V3)
+ * Access Scan 1 — Background Service Worker (Manifest V3)
  *
  * Handles:
  *  - Extension install/update lifecycle
  *  - Persisting settings via chrome.storage.sync
+ *  - Browser Back navigation via chrome.tabs.goBack
  *  - Relaying commands with automatic on-demand content script injection fallback
  */
 
@@ -11,7 +12,7 @@
 
 const DEFAULT_SETTINGS = {
   enabled: true, // Automatically active across supported websites
-  inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch) | 'eye' (Eye Blink Scanner)
+  inputMode: '4key', // '4key' (Four Arrow Keys) | '1key' (Single Switch)
   scanSpeed: 1500, // Interval in ms for 1-key single switch auto-scan
   speechEnabled: true, // Voice synthesis readout
   scanMode: 'flat', // 'flat' | 'hierarchical'
@@ -23,36 +24,23 @@ const DEFAULT_SETTINGS = {
   credentials: {
     enabled: true,
   },
-  eyeTracking: {
-    enabled: false,
-    gestureMode: 'single-blink', // 'single-blink' | 'double-blink' | 'long-blink'
-    earThreshold: 0.22,
-    showMiniPreview: true,
-  },
 };
 
 // ── Install / Update ──────────────────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === 'install') {
     await chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
-    console.log('[AccessScan v2] Installed with default settings.');
+    console.log('[Access Scan 1] Installed with default settings.');
   } else if (reason === 'update') {
     const { settings: existing = {} } = await chrome.storage.sync.get('settings');
     const merged = deepMerge(DEFAULT_SETTINGS, existing);
     await chrome.storage.sync.set({ settings: merged });
-    console.log('[AccessScan v2] Updated settings merged.');
+    console.log('[Access Scan 1] Updated settings merged.');
   }
 });
 
 // ── Message handling ──────────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'OPEN_CAMERA_PAGE' || message.type === 'OPEN_CAMERA_PAGE') {
-    const url = chrome.runtime.getURL('src/camera/camera.html');
-    chrome.tabs.create({ url });
-    sendResponse({ ok: true });
-    return true;
-  }
-
   if (message.type === 'NAVIGATE_BACK') {
     const tabId = sender.tab?.id;
     if (!tabId) {
@@ -128,10 +116,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     message.action === 'SET_SPEED' ||
     message.type === 'SET_SPEED' ||
     message.action === 'GET_STATUS' ||
-    message.type === 'GET_STATUS' ||
-    message.type === 'START_EYE_TRACKER' ||
-    message.type === 'STOP_EYE_TRACKER' ||
-    message.type === 'SET_BLINK_CONFIG'
+    message.type === 'GET_STATUS'
   ) {
     (async () => {
       try {
@@ -157,7 +142,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                   'src/content/highlighter.js',
                   'src/content/hierarchy.js',
                   'src/content/controller.js',
-                  'src/content/eye-tracker.js',
                   'src/content/single-switch.js',
                   'src/content/credentials.js',
                   'src/content/overlay.js',

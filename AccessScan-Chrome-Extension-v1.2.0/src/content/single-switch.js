@@ -56,11 +56,6 @@ class SingleSwitchScanner {
     this._boundKeyDown = this._handleKeyDown.bind(this);
     this._attached = false;
 
-    // Eye Blink Vision Engine integration
-    this.eyeTracker = null;
-    this.eyeTrackingEnabled = false;
-    this.blinkGesture = 'single-blink';
-
     this.KB_ROWS = [
       ['alex', 'student', 'grant', 'email', 'yes', 'submit'],
       ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -85,14 +80,10 @@ class SingleSwitchScanner {
     this.injectDock();
     this.attachEvents();
 
-    if (this.eyeTrackingEnabled) {
-      this.initEyeTracker(opts);
-    }
-
     this.advanceScan();
     this.resetTimer();
 
-    console.log(`[AccessScan] Single-Switch Scanner active (${this.scanInterval}ms, Eye: ${this.eyeTrackingEnabled}).`);
+    console.log(`[AccessScan] Single-Switch Scanner active (${this.scanInterval}ms).`);
   }
 
   stop() {
@@ -105,76 +96,7 @@ class SingleSwitchScanner {
     this.clearHighlights();
     this.removeDock();
 
-    if (this.eyeTracker) {
-      this.eyeTracker.stop();
-      this.eyeTracker = null;
-    }
-
     console.log('[AccessScan] Single-Switch Scanner stopped.');
-  }
-
-  initEyeTracker(opts = {}) {
-    if (!window.AccessScan.EyeTracker) return;
-    if (!this.eyeTracker) {
-      this.eyeTracker = new window.AccessScan.EyeTracker({
-        gestureMode: opts.blinkGesture || this.blinkGesture || 'single-blink',
-        earThreshold: opts.earThreshold ?? 0.22,
-        audioEnabled: this.audioEnabled,
-        showMiniPreview: opts.showMiniPreview !== false,
-      });
-
-      // ── Connect All 6 Gaze & Blink Gesture Callbacks ──
-      // Gesture 2: One deliberate long blink -> Select highlighted control
-      this.eyeTracker.onSelect = () => {
-        this.flashSelectionPulse();
-        if (this.emergencyMenuOpen) {
-          this.activateEmergencyMenuItem();
-        } else {
-          this.handleSwitchTrigger();
-        }
-      };
-
-      // Gesture 3: Two intentional blinks -> Back or cancel
-      this.eyeTracker.onBack = () => {
-        this.handleBack();
-      };
-
-      // Gesture 4: Hold eyes closed briefly -> Pause or open emergency menu
-      this.eyeTracker.onEmergencyPause = () => {
-        this.toggleEmergencyMenu();
-      };
-
-      // Gesture 5: Look left / right -> Change highlighted control
-      this.eyeTracker.onLookRight = () => {
-        this.stepNext();
-      };
-      this.eyeTracker.onLookLeft = () => {
-        this.stepPrev();
-      };
-
-      // Gesture 6: Look up / down -> Move through menu items
-      this.eyeTracker.onLookDown = () => {
-        this.stepDown();
-      };
-      this.eyeTracker.onLookUp = () => {
-        this.stepUp();
-      };
-
-      // Legacy fallback
-      this.eyeTracker.onBlinkTrigger = (gesture) => {
-        this.flashSelectionPulse();
-        if (this.emergencyMenuOpen) {
-          this.activateEmergencyMenuItem();
-        } else {
-          this.handleSwitchTrigger();
-        }
-      };
-    }
-    this.eyeTracker.start({
-      gestureMode: opts.blinkGesture || this.blinkGesture || 'single-blink',
-      earThreshold: opts.earThreshold ?? 0.22,
-      showMiniPreview: opts.showMiniPreview !== false,
-    });
   }
 
   updateConfig(opts = {}) {
@@ -184,33 +106,13 @@ class SingleSwitchScanner {
     if (typeof opts.audioEnabled === 'boolean') this.audioEnabled = opts.audioEnabled;
     if (typeof opts.speechEnabled === 'boolean') this.speechEnabled = opts.speechEnabled;
 
-    if (typeof opts.eyeTrackingEnabled === 'boolean') {
-      this.eyeTrackingEnabled = opts.eyeTrackingEnabled;
-      if (this.eyeTrackingEnabled && this.isScanning) {
-        this.initEyeTracker(opts);
-      } else if (!this.eyeTrackingEnabled && this.eyeTracker) {
-        this.eyeTracker.stop();
-        this.eyeTracker = null;
-      }
-    }
-    if (typeof opts.blinkGesture === 'string') {
-      this.blinkGesture = opts.blinkGesture;
-      if (this.eyeTracker) this.eyeTracker.updateConfig({ gestureMode: opts.blinkGesture });
-    }
-    if (typeof opts.earThreshold === 'number') {
-      if (this.eyeTracker) this.eyeTracker.updateConfig({ earThreshold: opts.earThreshold });
-    }
-    if (typeof opts.showMiniPreview === 'boolean') {
-      if (this.eyeTracker) this.eyeTracker.updateConfig({ showMiniPreview: opts.showMiniPreview });
-    }
-
     const speedBadge = document.getElementById('access-scan-dock-speed-badge');
     if (speedBadge) speedBadge.textContent = `${(this.scanInterval / 1000).toFixed(1)}s`;
 
     const modeBadge = document.getElementById('access-scan-dock-mode-badge');
     if (modeBadge) {
-      modeBadge.textContent = this.eyeTrackingEnabled ? '👁️ EYE BLINK SCANNER' : '1-KEY (SPACEBAR)';
-      modeBadge.style.background = this.eyeTrackingEnabled ? '#0284c7' : '#b45309';
+      modeBadge.textContent = '1-KEY (SPACEBAR)';
+      modeBadge.style.background = '#b45309';
     }
 
     if (this.isScanning && !this.isPaused) {
@@ -384,14 +286,13 @@ class SingleSwitchScanner {
 
     const dock = document.createElement('div');
     dock.id = 'access-scan-dock';
-    const isEye = this.eyeTrackingEnabled;
-    const modeBadgeText = isEye ? '👁️ EYE BLINK SCANNER' : '1-KEY (SPACEBAR)';
-    const modeBadgeColor = isEye ? '#0284c7' : '#b45309';
-    const switchBtnText = isEye ? 'Blink / Space' : 'Switch [Space]';
+    const modeBadgeText = '1-KEY (SPACEBAR)';
+    const modeBadgeColor = '#b45309';
+    const switchBtnText = 'Switch [Space]';
 
     dock.innerHTML = `
       <div style="position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:2147483645;background:#1c1917;color:#fafaf8;border:2px solid ${modeBadgeColor};border-radius:10px;padding:8px 16px;display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;box-shadow:0 12px 30px rgba(0,0,0,0.5);font-size:13px;user-select:none;">
-        <span style="font-size:18px;">${isEye ? '👁️' : '♿'}</span>
+        <span style="font-size:18px;">♿</span>
         <div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px;">
             <span id="access-scan-dock-mode-badge" style="background:${modeBadgeColor};color:#ffffff;font-size:10px;font-weight:bold;padding:1px 6px;border-radius:4px;letter-spacing:0.5px;">${modeBadgeText}</span>
@@ -402,7 +303,6 @@ class SingleSwitchScanner {
         <div style="display:flex;gap:6px;">
           <button id="access-scan-switch-btn" type="button" style="background:${modeBadgeColor};color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;">${switchBtnText}</button>
           <button id="access-scan-pause-btn" type="button" style="background:#292524;color:#d6d1c4;border:1px solid #57534e;padding:6px 10px;border-radius:6px;font-size:11px;cursor:pointer;">Pause [P]</button>
-          ${isEye ? '<button id="access-scan-cam-btn" type="button" style="background:#0f172a;border:1px solid #0284c7;color:#38bdf8;padding:6px 8px;border-radius:6px;font-size:11px;cursor:pointer;" title="Toggle mini camera HUD">📷 Cam</button>' : ''}
         </div>
       </div>
     `;
@@ -416,15 +316,6 @@ class SingleSwitchScanner {
     document.getElementById('access-scan-pause-btn')?.addEventListener('click', (e) => {
       e.stopPropagation();
       this.togglePause();
-    });
-
-    document.getElementById('access-scan-cam-btn')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (this.eyeTracker) {
-        const hud = document.getElementById('access-scan-eye-hud');
-        if (hud) this.eyeTracker.unmountHUD();
-        else this.eyeTracker.mountHUD();
-      }
     });
   }
 

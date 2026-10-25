@@ -212,7 +212,7 @@ server.listen(0, '127.0.0.1', async () => {
     await popupPage.waitForLoadState('domcontentloaded');
 
     const popupHeading = await popupPage.locator('#brand h1').textContent();
-    assert.strictEqual(popupHeading, 'AccessScan', 'Popup brand heading must be AccessScan');
+    assert.ok(popupHeading.includes('AccessScan') || popupHeading.includes('Access Scan'), 'Popup brand heading must be AccessScan or Access Scan 1');
 
     // Test mode pills in popup
     const btn1Key = popupPage.locator('#mode-btn-1key');
