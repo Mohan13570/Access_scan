@@ -1,13 +1,12 @@
 /**
  * AccessScan v2.0 — Virtual Keyboard
  *
- * Spatial four-key grid navigation:
- *   RIGHT → next key in same row
- *   LEFT  → previous key in same row
- *   DOWN  → type the highlighted key (activate)
- *   UP    → move to row above / exit keyboard if on top row
+ * True linear two-dimensional navigation:
+ *   RIGHT → next key across rows (wraps from last key of row to first key of next row, and end to start)
+ *   LEFT  → previous key across rows (wraps across row boundaries, and start to end)
+ *   DOWN  → type the highlighted key / activate action
+ *   UP    → EXIT virtual keyboard immediately & resume website navigation
  *
- * No auto-scanning timer. User navigates manually with arrows.
  * No Enter or Space required for any operation.
  *
  * postMessage protocol (to parent):
@@ -19,6 +18,7 @@
  *
  * postMessage protocol (from parent):
  *   { source:'accessscan-main', type:'INIT_VALUE', value, isPassword }
+ *   { source:'accessscan-main', type:'OSK_KEY', key }
  */
 
 'use strict';
@@ -30,7 +30,6 @@ const IS_PASSWORD    = params.get('isPassword') === 'true';
 const FIELD_LABEL    = decodeURIComponent(params.get('fieldLabel') ?? 'Text field');
 
 // ── Keyboard layouts ──────────────────────────────────────────────────────────
-// Each inner array = one row. Special keys are ALL_CAPS strings.
 const LAYOUTS = {
   qwerty: [
     ['q','w','e','r','t','y','u','i','o','p'],
@@ -86,9 +85,9 @@ const KEY_ARIA = {
 let currentLayout = INITIAL_LAYOUT;
 let isShift = false;
 let typedText = '';
-let rowIdx = 0;
-let colIdx = 0;
+let activeKeyIndex = 0; // Linear index across all keys in current layout
 let isPassword = IS_PASSWORD;
+let lastKeyTimestamp = 0;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 let keysEl, previewEl, fieldLabelEl, announceEl, titleEl;
@@ -105,16 +104,19 @@ function init() {
 
   buildLayout(currentLayout);
   attachLayoutBtns();
-  updateHighlight();
 
   document.addEventListener('keydown', onKeyDown, true);
 
   window.addEventListener('message', (e) => {
-    if (e.data?.source === 'accessscan-main' && e.data.type === 'INIT_VALUE') {
-      isPassword = e.data.isPassword ?? IS_PASSWORD;
-      if (!isPassword) {
-        typedText = e.data.value ?? '';
-        updatePreview();
+    if (e.data?.source === 'accessscan-main') {
+      if (e.data.type === 'INIT_VALUE') {
+        isPassword = e.data.isPassword ?? IS_PASSWORD;
+        if (!isPassword) {
+          typedText = e.data.value ?? '';
+          updatePreview();
+        }
+      } else if (e.data.type === 'OSK_KEY') {
+        dispatchArrowAction(e.data.key);
       }
     }
   });
@@ -138,18 +140,16 @@ function buildLayout(layoutName) {
       btn.dataset.col = cIdx;
       btn.dataset.key = key;
       btn.textContent = displayKey(key);
-      btn.setAttribute('aria-label', KEY_ARIA[key] ?? (key.length === 1 ? key : key));
-      btn.setAttribute('tabindex', '-1'); // arrow-key only navigation
-      btn.addEventListener('click', () => activateKey(key)); // mouse fallback
+      btn.setAttribute('aria-label', KEY_ARIA[key] ?? key);
+      btn.setAttribute('tabindex', '-1');
+      btn.addEventListener('click', () => activateKey(key));
       rowEl.appendChild(btn);
     });
 
     keysEl.appendChild(rowEl);
   });
 
-  // Reset cursor to first key
-  rowIdx = 0;
-  colIdx = 0;
+  activeKeyIndex = 0;
   updateHighlight();
 }
 
@@ -176,25 +176,31 @@ function attachLayoutBtns() {
 }
 
 // ── Highlight ─────────────────────────────────────────────────────────────────
+function getAllKeys() {
+  return Array.from(keysEl.querySelectorAll('.osk-key'));
+}
+
 function updateHighlight() {
-  document.querySelectorAll('.osk-key').forEach((k) => k.classList.remove('active-key'));
+  const allKeys = getAllKeys();
+  if (allKeys.length === 0) return;
 
-  const rows = getRows();
-  if (!rows[rowIdx]) return;
-  const keys = getKeys(rows[rowIdx]);
-  const safeCol = Math.min(colIdx, keys.length - 1);
-  colIdx = safeCol;
+  allKeys.forEach((k) => k.classList.remove('active-key'));
 
-  if (keys[colIdx]) {
-    keys[colIdx].classList.add('active-key');
-    keys[colIdx].scrollIntoView({ block: 'nearest' });
-    announce(getAnnounceText(keys[colIdx].dataset.key));
-  }
+  if (activeKeyIndex < 0) activeKeyIndex = 0;
+  if (activeKeyIndex >= allKeys.length) activeKeyIndex = allKeys.length - 1;
 
-  // Update row indicator
-  const indicator = document.getElementById('osk-row-indicator');
-  if (indicator) {
-    indicator.textContent = `Row ${rowIdx + 1} / ${rows.length}`;
+  const activeBtn = allKeys[activeKeyIndex];
+  if (activeBtn) {
+    activeBtn.classList.add('active-key');
+    activeBtn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    announce(getAnnounceText(activeBtn.dataset.key));
+
+    const indicator = document.getElementById('osk-row-indicator');
+    if (indicator) {
+      const rowNum = parseInt(activeBtn.dataset.row, 10) + 1;
+      const totalRows = keysEl.querySelectorAll('.osk-row').length;
+      indicator.textContent = `Row ${rowNum}/${totalRows} · Key ${activeKeyIndex + 1}/${allKeys.length}`;
+    }
   }
 }
 
@@ -202,70 +208,59 @@ function getAnnounceText(key) {
   return KEY_ARIA[key] ?? (key === ' ' ? 'Space' : key);
 }
 
-// ── Key navigation ────────────────────────────────────────────────────────────
-function onKeyDown(event) {
-  const { key } = event;
-  if (!['ArrowRight','ArrowLeft','ArrowDown','ArrowUp'].includes(key)) return;
-  event.preventDefault();
-  event.stopPropagation();
+// ── Unified 4-Arrow Navigation ────────────────────────────────────────────────
+function dispatchArrowAction(key) {
+  const now = Date.now();
+  if (now - lastKeyTimestamp < 50) return; // Debounce rapid bursts
+  lastKeyTimestamp = now;
 
-  const rows = getRows();
+  const allKeys = getAllKeys();
+  if (allKeys.length === 0) return;
 
   switch (key) {
     case 'ArrowRight': {
-      const keys = getKeys(rows[rowIdx]);
-      colIdx = (colIdx + 1) % keys.length;
+      // Linear next key across all rows, wrapping at the end
+      activeKeyIndex = (activeKeyIndex + 1) % allKeys.length;
       updateHighlight();
       break;
     }
     case 'ArrowLeft': {
-      const keys = getKeys(rows[rowIdx]);
-      colIdx = (colIdx - 1 + keys.length) % keys.length;
+      // Linear previous key across all rows, wrapping at the start
+      activeKeyIndex = (activeKeyIndex - 1 + allKeys.length) % allKeys.length;
       updateHighlight();
       break;
     }
     case 'ArrowDown': {
-      // Activate the highlighted key
-      const keys = getKeys(rows[rowIdx]);
-      const keyEl = keys[Math.min(colIdx, keys.length - 1)];
-      if (keyEl) activateKey(keyEl.dataset.key);
-      break;
-    }
-    case 'ArrowUp': {
-      if (rowIdx > 0) {
-        rowIdx--;
-        updateHighlight();
-      } else {
-        // On the topmost row — exit keyboard
-        sendToParent('OSK_CANCEL');
+      // Select the highlighted key
+      const activeBtn = allKeys[activeKeyIndex];
+      if (activeBtn) {
+        activateKey(activeBtn.dataset.key);
       }
       break;
     }
+    case 'ArrowUp': {
+      // Exit virtual keyboard immediately & restore webpage navigation
+      sendToParent('OSK_DONE');
+      break;
+    }
   }
 }
 
-// Helper to move DOWN to next row (used after some key activations)
-function moveRowDown() {
-  const rows = getRows();
-  if (rowIdx < rows.length - 1) {
-    rowIdx++;
-    updateHighlight();
-  }
-}
-
-function getRows() {
-  return Array.from(keysEl.querySelectorAll('.osk-row'));
-}
-
-function getKeys(rowEl) {
-  return rowEl ? Array.from(rowEl.querySelectorAll('.osk-key')) : [];
+function onKeyDown(event) {
+  const { key } = event;
+  if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(key)) return;
+  event.preventDefault();
+  event.stopPropagation();
+  dispatchArrowAction(key);
 }
 
 // ── Key activation ────────────────────────────────────────────────────────────
 function activateKey(key) {
-  // Ripple
   const btn = keysEl.querySelector(`.osk-key[data-key="${CSS.escape(key)}"]`);
-  if (btn) { btn.classList.add('ripple'); setTimeout(() => btn.classList.remove('ripple'), 250); }
+  if (btn) {
+    btn.classList.add('ripple');
+    setTimeout(() => btn.classList.remove('ripple'), 250);
+  }
 
   switch (key) {
     case 'SHIFT':
@@ -310,7 +305,6 @@ function activateKey(key) {
       return;
 
     default: {
-      // Regular character (including .com)
       const char = (isShift && key.length === 1) ? key.toUpperCase() : key;
       typeChar(char);
       if (isShift && key.length === 1) {

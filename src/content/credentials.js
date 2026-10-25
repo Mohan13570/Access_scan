@@ -65,6 +65,10 @@ class CredentialManager {
     return data[origin] ?? null;
   }
 
+  async getCredentialForOrigin() {
+    return this.getSavedCredential();
+  }
+
   /**
    * Prompt the user (via overlay) to save credentials.
    * ONLY called after explicit user action.

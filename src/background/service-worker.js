@@ -10,7 +10,7 @@
 'use strict';
 
 const DEFAULT_SETTINGS = {
-  enabled: false,
+  enabled: true, // Automatically active across supported websites
   scanMode: 'flat', // 'flat' | 'hierarchical'
   highlightColor: '#FF6B35',
   highlightBorderWidth: 3,

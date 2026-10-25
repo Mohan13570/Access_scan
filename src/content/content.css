@@ -21,97 +21,143 @@
   }
 }
 
-/* ── On-page HUD panel (placed top-left so extension popup never blocks it) ── */
+/* ── On-page Unobtrusive Accessibility Indicator (bottom-right floating pill) ── */
 #accessscan-overlay {
   position: fixed !important;
-  top: 16px !important;
-  left: 16px !important;
+  bottom: 18px !important;
+  right: 18px !important;
+  top: auto !important;
+  left: auto !important;
   z-index: 2147483646 !important;
-  width: 240px !important;
-  background: rgba(13, 17, 23, 0.96) !important;
-  border: 1.5px solid #ff6b35 !important;
-  border-radius: 10px !important;
+  background: rgba(13, 17, 23, 0.94) !important;
+  border: 1.5px solid rgba(255, 107, 53, 0.7) !important;
+  border-radius: 20px !important;
   padding: 0 !important;
   font-family: system-ui, -apple-system, sans-serif !important;
   font-size: 12px !important;
   color: #e6edf3 !important;
-  box-shadow: 0 10px 36px rgba(0, 0, 0, 0.7) !important;
-  backdrop-filter: blur(10px) !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
   overflow: hidden !important;
   user-select: none !important;
-  display: block !important;
+  display: flex !important;
+  flex-direction: column !important;
   visibility: visible !important;
   opacity: 1 !important;
+  max-width: 380px !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
-#as-overlay-header {
+#accessscan-overlay.as-compact {
+  border-radius: 20px !important;
+}
+
+#accessscan-overlay.as-expanded {
+  border-radius: 12px !important;
+  width: 280px !important;
+}
+
+#as-overlay-bar {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
-  padding: 8px 12px !important;
-  background: rgba(255, 107, 53, 0.16) !important;
-  border-bottom: 1px solid #30363d !important;
+  padding: 5px 10px !important;
+  gap: 8px !important;
+  cursor: grab !important;
+}
+
+#as-overlay-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  overflow: hidden !important;
 }
 
 #as-overlay-logo {
-  font-weight: 700 !important;
-  font-size: 12px !important;
+  font-size: 14px !important;
   color: #ff6b35 !important;
-  letter-spacing: 0.3px !important;
 }
 
 #as-overlay-mode {
-  font-size: 10px !important;
+  font-size: 9px !important;
   font-weight: 700 !important;
-  letter-spacing: 1px !important;
+  letter-spacing: 0.8px !important;
   text-transform: uppercase !important;
   background: #ff6b35 !important;
   color: #fff !important;
-  padding: 2px 7px !important;
-  border-radius: 10px !important;
+  padding: 2px 6px !important;
+  border-radius: 8px !important;
+  flex-shrink: 0 !important;
 }
 
-/* Mode colour variants */
 #accessscan-overlay[data-mode="keyboard"] #as-overlay-mode { background: #58a6ff !important; }
 #accessscan-overlay[data-mode="choose-option"] #as-overlay-mode { background: #3fb950 !important; }
 #accessscan-overlay[data-mode="cred-prompt"] #as-overlay-mode { background: #d29922 !important; }
 
-#as-overlay-element {
-  padding: 8px 12px 6px !important;
-  border-bottom: 1px solid #21262d !important;
-}
-
 #as-overlay-element-label {
-  display: block !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
+  display: inline-block !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
   color: #79c0ff !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
-  max-width: 216px !important;
+  max-width: 160px !important;
+}
+
+#as-overlay-toggle {
+  background: transparent !important;
+  border: none !important;
+  color: #8b949e !important;
+  font-size: 13px !important;
+  cursor: pointer !important;
+  padding: 2px 4px !important;
+  border-radius: 4px !important;
+  line-height: 1 !important;
+  transition: color 0.15s ease !important;
+}
+
+#as-overlay-toggle:hover {
+  color: #fff !important;
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+#as-overlay-body {
+  display: none !important;
+  padding: 6px 10px 8px !important;
+  border-top: 1px solid #30363d !important;
+}
+
+#accessscan-overlay.as-expanded #as-overlay-body {
+  display: block !important;
 }
 
 #as-overlay-hints {
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
-  gap: 3px !important;
-  padding: 7px 12px !important;
-  border-bottom: 1px solid #21262d !important;
+  gap: 4px !important;
 }
 
-#as-overlay-hints span {
-  font-size: 11px !important;
+.as-hint-chip {
+  font-size: 10px !important;
   color: #8b949e !important;
-  font-weight: 500 !important;
+  background: #161b22 !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  border: 1px solid #30363d !important;
+  text-align: center !important;
 }
 
 #as-overlay-status {
-  min-height: 22px !important;
-  padding: 4px 12px !important;
+  display: none !important;
+  padding: 2px 10px 4px !important;
   font-size: 11px !important;
   color: #3fb950 !important;
   font-weight: 600 !important;
+}
+
+#as-overlay-status.visible {
+  display: block !important;
 }
 
 /* ── OSK iframe ──────────────────────────────────────────────────────────── */

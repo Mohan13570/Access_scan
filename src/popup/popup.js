@@ -100,7 +100,7 @@ async function loadSettings() {
   try {
     const res = await chrome.storage.sync.get('settings');
     currentSettings = res?.settings ?? {
-      enabled: false,
+      enabled: true,
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
@@ -109,7 +109,7 @@ async function loadSettings() {
     };
   } catch (_) {
     currentSettings = {
-      enabled: false,
+      enabled: true,
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
@@ -236,6 +236,8 @@ function bindEvents() {
 
     if (!isNavActive) {
       updateStatusUI(true, 'Starting navigation...');
+      currentSettings.enabled = true;
+      await saveSettings(currentSettings);
       await sendTabMessageWithFallback(tab.id, { type: 'START_SCANNER' });
       updateStatusUI(true, 'Active on page');
       showToast('▶ Navigation started!');
@@ -243,6 +245,8 @@ function bindEvents() {
       setTimeout(() => window.close(), 300);
     } else {
       updateStatusUI(false, 'Stopping...');
+      currentSettings.enabled = false;
+      await saveSettings(currentSettings);
       await sendTabMessageWithFallback(tab.id, { type: 'STOP_SCANNER' });
       updateStatusUI(false, 'Stopped');
       showToast('■ Navigation stopped');
@@ -265,7 +269,7 @@ function bindEvents() {
 
   btnReset.addEventListener('click', async () => {
     const defaultSettings = {
-      enabled: false,
+      enabled: true,
       scanMode: 'flat',
       highlightColor: '#FF6B35',
       highlightBorderWidth: 3,
