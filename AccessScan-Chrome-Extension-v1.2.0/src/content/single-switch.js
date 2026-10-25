@@ -38,6 +38,21 @@ class SingleSwitchScanner {
     this.emergencyMenuIndex = 0;
 
     this.audioCtx = null;
+    this._hasUserGesture = false;
+
+    // Register user gesture listener to lazily unlock Web Audio API without autoplay warnings
+    const onUserGesture = () => {
+      this._hasUserGesture = true;
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+    };
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('pointerdown', onUserGesture, { capture: true, passive: true });
+      window.addEventListener('keydown', onUserGesture, { capture: true, passive: true });
+      window.addEventListener('click', onUserGesture, { capture: true, passive: true });
+    }
+
     this._boundKeyDown = this._handleKeyDown.bind(this);
     this._attached = false;
 
@@ -240,11 +255,17 @@ class SingleSwitchScanner {
 
   // ── Web Audio Synthesizer & Speech ──────────────────────────────────────────
   getAudioContext() {
-    if (!this.audioCtx) {
-      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!this._hasUserGesture) {
+      // Do not attempt to instantiate or resume AudioContext before user interaction.
+      // Prevents Chrome Autoplay policy warnings on page load.
+      return null;
     }
-    if (this.audioCtx.state === 'suspended') {
-      this.audioCtx.resume();
+    if (!this.audioCtx && typeof window !== 'undefined') {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.audioCtx = new AudioCtx();
+    }
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
     }
     return this.audioCtx;
   }
@@ -253,6 +274,7 @@ class SingleSwitchScanner {
     if (!this.audioEnabled) return;
     try {
       const ctx = this.getAudioContext();
+      if (!ctx || ctx.state === 'suspended') return;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -606,6 +628,10 @@ class SingleSwitchScanner {
       document.activeElement !== document.body
     ) {
       targetEl = document.activeElement;
+    }
+
+    if (!targetEl) {
+      targetEl = this.activeElement;
     }
 
     if (!targetEl) return;
