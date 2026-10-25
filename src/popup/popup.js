@@ -1,8 +1,8 @@
 /**
  * AccessScan v2.0 — Popup Controller
  *
- * Reliable multi-tab communication with dynamic on-demand script injection,
- * settings management, and saved credentials review.
+ * Clean tab messaging with dynamic on-demand script injection,
+ * safe error consumption, and saved credentials review.
  */
 
 'use strict';
@@ -28,62 +28,67 @@ const btnReset         = document.getElementById('btn-reset');
 let currentSettings = {};
 let isNavActive = false;
 
-// ── Helper: find the user's actual active web tab ─────────────────────────────
+// ── Helper: get the user's active webpage tab ─────────────────────────────────
 async function getTargetTab() {
-  // Query active tab in the user's last focused normal window
   let tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  let tab = tabs.find(t => t.id && t.url && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+  let tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
   if (tab) return tab;
 
-  // Fallback: search all active tabs
   tabs = await chrome.tabs.query({ active: true });
-  tab = tabs.find(t => t.id && t.url && !t.url.startsWith('chrome-extension://') && !t.url.startsWith('chrome://'));
+  tab = tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
   if (tab) return tab;
 
-  // Final fallback: any valid web tab
   tabs = await chrome.tabs.query({});
-  return tabs.find(t => t.id && t.url && (t.url.startsWith('http://') || t.url.startsWith('https://') || t.url.startsWith('file://')));
+  return tabs.find(t => t.id && t.url && isValidWebUrl(t.url));
+}
+
+function isValidWebUrl(url) {
+  if (!url) return false;
+  return url.startsWith('http://') || url.startsWith('https://') || url.startsWith('file://');
 }
 
 // ── Helper: send message to tab, injecting scripts dynamically if needed ──────
 async function sendTabMessageWithFallback(tabId, message) {
   return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, message, async (response) => {
-      if (chrome.runtime.lastError || !response) {
-        console.log('[AccessScan Popup] Injecting content scripts on-demand into tab:', tabId);
-        try {
-          await chrome.scripting.insertCSS({
-            target: { tabId },
-            files: ['src/content/content.css'],
-          }).catch(() => {});
+    try {
+      chrome.tabs.sendMessage(tabId, message, async (response) => {
+        const err = chrome.runtime.lastError;
+        if (err || !response) {
+          try {
+            await chrome.scripting.insertCSS({
+              target: { tabId },
+              files: ['src/content/content.css'],
+            }).catch(() => {});
 
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: [
-              'src/content/scanner.js',
-              'src/content/highlighter.js',
-              'src/content/hierarchy.js',
-              'src/content/controller.js',
-              'src/content/credentials.js',
-              'src/content/overlay.js',
-              'src/content/main.js'
-            ],
-          });
-
-          // Wait 100ms for init and retry
-          setTimeout(() => {
-            chrome.tabs.sendMessage(tabId, message, (retryResp) => {
-              resolve(retryResp || { ok: true });
+            await chrome.scripting.executeScript({
+              target: { tabId },
+              files: [
+                'src/content/scanner.js',
+                'src/content/highlighter.js',
+                'src/content/hierarchy.js',
+                'src/content/controller.js',
+                'src/content/credentials.js',
+                'src/content/overlay.js',
+                'src/content/main.js'
+              ],
             });
-          }, 120);
-        } catch (err) {
-          console.error('[AccessScan Popup] Script injection failed:', err);
-          resolve({ error: err.message });
+
+            setTimeout(() => {
+              chrome.tabs.sendMessage(tabId, message, (retryResp) => {
+                void chrome.runtime.lastError;
+                resolve(retryResp || { ok: true });
+              });
+            }, 120);
+          } catch (injectErr) {
+            resolve({ error: injectErr.message });
+          }
+        } else {
+          resolve(response);
         }
-      } else {
-        resolve(response);
-      }
-    });
+      });
+    } catch (e) {
+      resolve({ error: e.message });
+    }
   });
 }
 
@@ -100,6 +105,7 @@ async function init() {
 async function loadSettings() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (resp) => {
+      void chrome.runtime.lastError;
       currentSettings = resp?.settings ?? {
         enabled: false,
         scanMode: 'flat',
@@ -124,18 +130,25 @@ function renderSettings() {
 async function checkActiveTabStatus() {
   const tab = await getTargetTab();
   if (!tab?.id) {
-    updateStatusUI(false, 'Open any webpage to start');
+    updateStatusUI(false, 'Open any regular webpage to navigate');
     return;
   }
 
-  chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }, (resp) => {
-    if (chrome.runtime.lastError || !resp) {
-      updateStatusUI(false, `Ready on ${escapeHtml(new URL(tab.url).hostname || 'page')}`);
-      return;
-    }
-    isNavActive = resp.state !== 'IDLE';
-    updateStatusUI(isNavActive, isNavActive ? `Active (${resp.state})` : 'Ready — press Start');
-  });
+  try {
+    chrome.tabs.sendMessage(tab.id, { type: 'GET_STATUS' }, (resp) => {
+      const err = chrome.runtime.lastError;
+      if (err || !resp) {
+        let host = 'page';
+        try { host = new URL(tab.url).hostname; } catch (_) {}
+        updateStatusUI(false, `Ready on ${escapeHtml(host)}`);
+        return;
+      }
+      isNavActive = resp.state !== 'IDLE';
+      updateStatusUI(isNavActive, isNavActive ? `Active (${resp.state})` : 'Ready — press Start');
+    });
+  } catch (_) {
+    updateStatusUI(false, 'Ready — press Start');
+  }
 }
 
 function updateStatusUI(active, msg) {
@@ -158,6 +171,7 @@ function updateStatusUI(active, msg) {
 // ── Saved Credentials Review ──────────────────────────────────────────────────
 async function loadSavedCredentials() {
   chrome.storage.local.get('as_cred_index', (res) => {
+    void chrome.runtime.lastError;
     const creds = res['as_cred_index'] || {};
     const entries = Object.entries(creds);
 
@@ -194,6 +208,7 @@ async function loadSavedCredentials() {
 async function deleteCredential(origin) {
   return new Promise((resolve) => {
     chrome.storage.local.get('as_cred_index', (res) => {
+      void chrome.runtime.lastError;
       const creds = res['as_cred_index'] || {};
       delete creds[origin];
       chrome.storage.local.set({ as_cred_index: creds }, resolve);
@@ -206,7 +221,7 @@ function bindEvents() {
   btnMainToggle.addEventListener('click', async () => {
     const tab = await getTargetTab();
     if (!tab?.id) {
-      showToast('⚠️ No webpage found');
+      showToast('⚠️ Open a website (not chrome://)');
       return;
     }
 
@@ -215,8 +230,8 @@ function bindEvents() {
       await sendTabMessageWithFallback(tab.id, { type: 'START_SCANNER' });
       updateStatusUI(true, 'Active on page');
       showToast('▶ Navigation started!');
-      // Close popup after brief moment so focus transfers cleanly to the page
-      setTimeout(() => window.close(), 350);
+      // Close popup smoothly so focus returns cleanly to the web page
+      setTimeout(() => window.close(), 300);
     } else {
       updateStatusUI(false, 'Stopping...');
       await sendTabMessageWithFallback(tab.id, { type: 'STOP_SCANNER' });
@@ -236,6 +251,7 @@ function bindEvents() {
     };
 
     chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: updated }, () => {
+      void chrome.runtime.lastError;
       currentSettings = updated;
       showToast('✓ Settings saved');
     });
@@ -252,6 +268,7 @@ function bindEvents() {
     };
 
     chrome.runtime.sendMessage({ type: 'SAVE_SETTINGS', settings: defaultSettings }, () => {
+      void chrome.runtime.lastError;
       currentSettings = defaultSettings;
       renderSettings();
       showToast('Defaults restored');

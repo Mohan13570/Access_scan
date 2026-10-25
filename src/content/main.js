@@ -14,16 +14,6 @@
  *   SECTION_NAV ← inside section, UP exits back to top level
  *     ↓ deactivate
  *   IDLE
- *
- * Key bindings (NAVIGATING):
- *   RIGHT  → next element
- *   LEFT   → previous element
- *   DOWN   → activate element (open OSK / click / enter section)
- *   UP     → back (exit section / stop if at top)
- *
- * Key bindings (OSK_OPEN):
- *   Handled entirely inside keyboard.js iframe via arrow keys.
- *   Parent receives postMessages: OSK_CHAR, OSK_BACKSPACE, OSK_DONE, OSK_CANCEL
  */
 
 'use strict';
@@ -78,28 +68,33 @@ async function init() {
   _overlay = new window.AccessScan.OverlayPanel();
   _credMgr = new window.AccessScan.CredentialManager();
 
-  // Listen for messages from service worker / popup
+  // Listen for messages from service worker / popup (synchronous responses)
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'SETTINGS_UPDATED') {
       _settings = msg.settings;
       sendResponse({ ok: true });
+      return false;
     }
     if (msg.type === 'TOGGLE_SCANNER') {
       toggleAccessScan();
       sendResponse({ ok: true });
+      return false;
     }
     if (msg.type === 'START_SCANNER') {
       if (_state === AS_State.IDLE) startNav();
       sendResponse({ ok: true });
+      return false;
     }
     if (msg.type === 'STOP_SCANNER') {
       if (_state !== AS_State.IDLE) stopNav();
       sendResponse({ ok: true });
+      return false;
     }
     if (msg.type === 'GET_STATUS') {
       sendResponse({ state: _state, index: _flatIndex, total: _flatElements.length });
+      return false;
     }
-    return true;
+    return false;
   });
 
   // Listen for OSK iframe messages
@@ -121,7 +116,8 @@ async function init() {
 async function loadSettings() {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type: 'GET_SETTINGS' }, (resp) => {
-      resolve(resp?.settings ?? getDefaultSettings());
+      const err = chrome.runtime.lastError;
+      resolve((!err && resp?.settings) ? resp.settings : getDefaultSettings());
     });
   });
 }
@@ -209,10 +205,8 @@ function refreshElements() {
 function onDOMMutated() {
   if (_state === AS_State.IDLE) return;
 
-  const oldLen = _flatElements.length;
   refreshElements();
 
-  // If the previously focused element is gone, stay at the same index (clamped)
   if (_flatElements.length > 0 && _flatIndex >= _flatElements.length) {
     _flatIndex = Math.max(0, _flatElements.length - 1);
   }
@@ -266,7 +260,6 @@ function handleActivate() {
 
   if (mode === 'hierarchical' && _hierarchyMgr) {
     if (_hierarchyMgr.isAtSectionLevel) {
-      // Enter the section
       _hierarchyMgr.selectSection();
       _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back to sections' });
       highlightCurrent();
@@ -279,7 +272,6 @@ function handleActivate() {
 }
 
 function handleBack() {
-  // Context-sensitive back action
   switch (_state) {
     case AS_State.OSK_OPEN:
       closeOSK(true);
@@ -297,9 +289,8 @@ function handleBack() {
         _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Enter section', up: 'Stop' });
         highlightCurrent();
       } else {
-        // At top level — stop AccessScan
         stopNav();
-        _overlay.flash('AccessScan stopped. Activate from toolbar to resume.');
+        _overlay.flash('AccessScan stopped.');
       }
       break;
     }
@@ -319,14 +310,12 @@ function highlightCurrent() {
       if (sec) {
         window.AccessScan.Highlighter.highlightSection(sec.el, sec.label, _settings);
         _overlay.setElementName(`Section: ${sec.label} (${sec.children.length} controls)`);
-        scrollToElement(sec.el);
       }
     } else {
       const el = _hierarchyMgr.currentElement;
       if (el) {
         window.AccessScan.Highlighter.highlightElement(el, _settings);
         _overlay.setElementName(window.AccessScan.Highlighter.getElementLabel(el));
-        scrollToElement(el);
       }
     }
   } else {
@@ -334,16 +323,10 @@ function highlightCurrent() {
     if (el) {
       window.AccessScan.Highlighter.highlightElement(el, _settings);
       _overlay.setElementName(window.AccessScan.Highlighter.getElementLabel(el));
-      scrollToElement(el);
     } else {
       _overlay.setElementName('—');
     }
   }
-}
-
-function scrollToElement(el) {
-  if (!el) return;
-  el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 }
 
 // ── Element Activation ────────────────────────────────────────────────────────
@@ -355,7 +338,6 @@ function activateElement(el) {
   const type = (el.getAttribute('type') || '').toLowerCase();
   const role = (el.getAttribute('role') || '').toLowerCase();
 
-  // Text/password/email/tel/number/search/url/textarea → open OSK
   const isTextInput =
     (tag === 'INPUT' && ['text','email','tel','number','password','search','url','','null'].includes(type)) ||
     tag === 'TEXTAREA' ||
@@ -369,7 +351,6 @@ function activateElement(el) {
     return;
   }
 
-  // SELECT → open custom accessible select dialog
   if (tag === 'SELECT') {
     _selectEl = el;
     el.focus();
@@ -377,7 +358,6 @@ function activateElement(el) {
     return;
   }
 
-  // Checkbox / radio → toggle
   if (tag === 'INPUT' && (type === 'checkbox' || type === 'radio')) {
     el.focus();
     el.click();
@@ -385,12 +365,10 @@ function activateElement(el) {
     return;
   }
 
-  // Button / link / submit / role=button → click
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   el.focus();
   el.click();
 
-  // After clicking a submit button, check for credential save opportunity
   if (type === 'submit' || type === 'button' || tag === 'BUTTON') {
     setTimeout(checkCredentialSave, 800);
   }
@@ -431,7 +409,6 @@ function openOSK(inputEl) {
   document.body.appendChild(_oskIframe);
   document.body.style.marginBottom = '300px';
 
-  // Send current field value to OSK after it loads
   _oskIframe.addEventListener('load', () => {
     _oskIframe?.contentWindow?.postMessage(
       { source: 'accessscan-main', type: 'INIT_VALUE', value: currentValue, isPassword },
@@ -495,7 +472,6 @@ function openSelectDialog(selectEl) {
   _overlay.setMode('CHOOSE OPTION');
   _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Confirm', up: 'Cancel' });
 
-  // Rebuild the controller to handle SELECT_OPEN state
   if (_controller) {
     _controller.onNext = () => {
       _selectIndex = (_selectIndex + 1) % _selectOptions.length;
@@ -569,7 +545,6 @@ function closeSelectDialog() {
     _overlay.setMode('NAVIGATING');
     _overlay.setHints({ left: 'Prev', right: 'Next', down: 'Select', up: 'Back' });
 
-    // Restore controller callbacks
     if (_controller) {
       _controller.onNext = handleNext;
       _controller.onPrev = handlePrev;
@@ -590,11 +565,9 @@ async function checkAutofill() {
   const saved = await _credMgr.getSavedCredential();
   if (!saved) return;
 
-  // Show autofill prompt in overlay
   setTimeout(() => {
     if (_state === AS_State.IDLE) return;
-    _overlay.flash(`💾 Saved login available for ${window.location.hostname}. Navigate to username field and press ▼ to autofill.`, 5000);
-    // Tag the username element so activation triggers autofill
+    _overlay.flash(`💾 Saved login for ${window.location.hostname}. Press ▼ on username to autofill.`, 4000);
     form.usernameEl.dataset.asAutofill = 'true';
     form.usernameEl.dataset.asUsername = saved.username;
   }, 500);
@@ -608,11 +581,9 @@ async function checkCredentialSave() {
   const username = form.usernameEl.value;
   if (!username) return;
 
-  // Don't re-save if same origin already saved
   const existing = await _credMgr.getSavedCredential();
   if (existing?.username === username) return;
 
-  // Store reference for prompt
   _credPromptData = { username, passwordEl: form.passwordEl };
   showCredPrompt(username);
 }
@@ -638,7 +609,6 @@ function showCredPrompt(username) {
   `;
   document.body.appendChild(dlg);
 
-  // Temporarily re-route controller
   if (_controller) {
     _controller.onNext = () => {
       _credPromptIndex = (_credPromptIndex + 1) % _credPromptOptions.length;
@@ -679,7 +649,6 @@ function dismissCredPrompt() {
   _credPromptData = null;
   _state = AS_State.NAVIGATING;
 
-  // Restore controller
   if (_controller) {
     _controller.onNext = handleNext;
     _controller.onPrev = handlePrev;
